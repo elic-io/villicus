@@ -1,10 +1,8 @@
-module FlowMaster.Tests
+module Tests
 
-open FlowMaster
-open NUnit.Framework
+open System
+open Xunit
 
-[<Test>]
-let ``hello returns 42`` () =
-  let result = Library.hello 42
-  printfn "%i" result
-  Assert.AreEqual(42,result)
+[<Fact>]
+let ``My test`` () =
+    Assert.True(true)
