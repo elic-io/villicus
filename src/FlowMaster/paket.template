@@ -1,0 +1,25 @@
+type project
+title
+    FlowMaster
+owners
+    Jon Roberts
+authors 
+    Jon Roberts
+projectUrl
+    https://github.com/elic-io/flowmaster
+iconUrl
+    https://raw.githubusercontent.com/elic-io/flowmaster/master/docs/files/img/logo.png
+licenseUrl
+    https://github.com/elic-io/flowmaster/blob/master/LICENSE.txt
+requireLicenseAcceptance
+    false
+copyright
+    Copyright 2015
+tags
+    workflow
+summary
+    Workflow for Automation and Manual Process tracking
+description
+    Workflow for Automation and Manual Process Tracking
+
+
