@@ -31,11 +31,15 @@ type Version =
     member x.Inc = x |> (fun (Version i) -> i+1UL |> Version)
     
 type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type WorkflowEvent =
 =======
 type Event =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type WorkflowEvent =
+>>>>>>> cleanup type inference on function parameters
 | WorkflowCreated of WorkflowNamedEvent
 | WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
 | WorkflowCopied of WorkflowCopiedEvent
@@ -52,10 +56,13 @@ type Event =
 | TransitionChanged of TransitionEditEvent
 | TransitionDropped of TransitionDroppedEvent
 and WorkflowNamedEvent = { WorkflowId: WorkflowId; Name: string; }
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 =======
 and WorkflowEvent = WorkflowId
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+>>>>>>> cleanup type inference on function parameters
 and VersionedWorkflowEvent = VersionedWorkflowId
 and WorkflowCreatedAsCopyEvent = { WorkflowId: WorkflowId; Source: VersionedWorkflowId; CopyName: string }
 and WorkflowCopiedEvent = { WorkflowId: WorkflowId; Version: Version; Target: WorkflowId }
@@ -71,7 +78,10 @@ type CreateWorkflowCommand (workflowId, name) =
     member __.WorkflowId = workflowId
     member __.Name = name
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
+=======
+>>>>>>> cleanup type inference on function parameters
 type CopyCommand (source, target, copyName) =
     do
         requireStringVal "copyName" copyName
@@ -79,8 +89,11 @@ type CopyCommand (source, target, copyName) =
     member __.Target = target
     member __.CopyName = copyName
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 =======
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+>>>>>>> cleanup type inference on function parameters
 type AddStateCommand (workflowId, stateName) =
     do
         requireStringVal "state name" stateName
@@ -123,10 +136,13 @@ type WorkflowCommand =
 | EditTransition of EditTransitionCommand
 | DropTransition of DropTransitionCommand
 and StateCommand = { WorkflowId: WorkflowId; State: StateId }
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 =======
 and CopyCommand = { Source: VersionedWorkflowId; Target: WorkflowId; CopyName: string }
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+>>>>>>> cleanup type inference on function parameters
 and DropTransitionCommand = { WorkflowId: WorkflowId; Transition: TransitionId }
 
 type Problems = 
@@ -140,44 +156,61 @@ type Problems =
         && (Set.isEmpty x.UnreachableStates)
         && (Set.isEmpty x.CannotReachAnyTerminalState)
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type WorkflowException (message, workflowId) = 
 =======
 type WorkflowException (message:string, workflowId:WorkflowId) = 
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type WorkflowException (message, workflowId) = 
+>>>>>>> cleanup type inference on function parameters
     inherit exn(sprintf "Error for %O: %s" workflowId message)
     member __.WorkflowId = workflowId
     static member New i m = WorkflowException(m,i)
     
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type MaxCountExceededException (message, workflowId, maxCountAllowed) = 
 =======
 type MaxCountExceededException (message:string, workflowId:WorkflowId, maxCountAllowed:uint32) = 
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type MaxCountExceededException (message, workflowId, maxCountAllowed) = 
+>>>>>>> cleanup type inference on function parameters
     inherit WorkflowException(message, workflowId)
     with
     member __.MaxCountAllowed = maxCountAllowed
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type DuplicateWorkflowIdException (workflowId) = 
 =======
 type DuplicateWorkflowIdException (workflowId:WorkflowId) = 
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type DuplicateWorkflowIdException (workflowId) = 
+>>>>>>> cleanup type inference on function parameters
     inherit WorkflowException("already exists",workflowId)
 
 type NonExistantWorkflowException (workflowId) =
     inherit WorkflowException("workflow does not exist", workflowId)
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type UndefinedVersionException (workflowId,version) =
 =======
 type UndefinedVersionException (workflowId:WorkflowId,version:Version) =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type UndefinedVersionException (workflowId,version) =
+>>>>>>> cleanup type inference on function parameters
     inherit WorkflowException(sprintf "%O not found" version,workflowId)
     with
     member __.Version = version
     static member New w v = UndefinedVersionException(w,v)
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type InvalidWorkflowException (message, workflowId, problems) = 
     inherit WorkflowException("",workflowId)
@@ -187,6 +220,11 @@ type InvalidWorkflowException (message:string, workflowId:WorkflowId, problems:P
     inherit WorkflowException("",workflowId)
     let noneIfEmpty (s:string) = if s = "" then None else Some s
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type InvalidWorkflowException (message, workflowId, problems) = 
+    inherit WorkflowException("",workflowId)
+    let noneIfEmpty s = if s = "" then None else Some s
+>>>>>>> cleanup type inference on function parameters
     let problemMessage p =
         let nts =
             match p.NoTerminalStates with
@@ -210,21 +248,29 @@ type InvalidWorkflowException (message:string, workflowId:WorkflowId, problems:P
         |> Seq.singleton |> Seq.append (problemMessage problems) |> String.concat "\n"
     member __.Problems = problems
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type DuplicateStateNameException (workflowId,stateName) =
 =======
 type DuplicateStateNameException (workflowId:WorkflowId,stateName:string) =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type DuplicateStateNameException (workflowId,stateName) =
+>>>>>>> cleanup type inference on function parameters
     inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
     with
     member __.StateName = stateName
     static member New i s = DuplicateStateNameException(i,s)
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type UndefinedStateException (workflowId,stateId) =
 =======
 type UndefinedStateException (workflowId:WorkflowId,stateId:StateId) =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+type UndefinedStateException (workflowId,stateId) =
+>>>>>>> cleanup type inference on function parameters
     inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
     with
     member __.StateId = stateId
@@ -326,6 +372,7 @@ module Workflow =
                 //TODO should this actually be MaxVal + 1 ?
                 |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName |> MaxCountExceededException.New workflowId  :> exn)
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal nextStateId workFlowId workflowModel = nextId "states" workflowModel.States workFlowId
     let internal nextTransitionId workFlowId workflowModel = nextId "transitions" workflowModel.Transitions workFlowId
@@ -333,6 +380,10 @@ module Workflow =
     let nextStateId workFlowId x = nextId "states" x.States workFlowId
     let nextTransitionId workFlowId x = nextId "transitions" x.Transitions workFlowId
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+    let internal nextStateId workFlowId workflowModel = nextId "states" workflowModel.States workFlowId
+    let internal nextTransitionId workFlowId workflowModel = nextId "transitions" workflowModel.Transitions workFlowId
+>>>>>>> cleanup type inference on function parameters
 
     let rec internal findAllTargets (foundTargets:Set<State>) (transitionsMap:Map<TransitionId,Transition>) statesMap (state:State) =
         let getDirectTargets st =
@@ -350,6 +401,7 @@ module Workflow =
         |> Set.union directTargets
         |> Set.add state
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     /// Valid Workflows meet the following criteria:
     /// - Have at least one terminal state
@@ -387,11 +439,17 @@ module Workflow =
         |> findAllTargets Set.empty x.Transitions x.States
         |> Set.map (fun y -> y.Id)
 
+=======
+>>>>>>> cleanup type inference on function parameters
     /// Valid Workflows meet the following criteria:
     /// - Have at least one terminal state
     /// - All states can reach at least one terminal state
     /// - Every state is reachable from the initial state
     let problems (x:WorkflowModel) =
+      let reachableStates (x:WorkflowModel) =
+        x.InitialState
+        |> findAllTargets Set.empty x.Transitions x.States
+        |> Set.map (fun y -> y.Id)
       let p =
         let reachable = reachableStates x
         { NoTerminalStates = x.TerminalStates.IsEmpty
@@ -411,7 +469,7 @@ module Workflow =
         | false -> Some p
         | true -> None
         
-    let valid x = (problems x).IsNone
+    let valid workflowModel = (problems workflowModel).IsNone
 
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     let createWorkflow (command: CreateWorkflowCommand) state =
@@ -433,11 +491,15 @@ module Workflow =
         | _ -> 
             DuplicateWorkflowIdException(command.WorkflowId) :> exn |> Error
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal bindExists workflowId f : (Workflow -> Result<'a,exn>) =
 =======
     let internal bindExists workflowId f =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+    let internal bindExists workflowId f : (Workflow -> Result<'a,exn>) =
+>>>>>>> cleanup type inference on function parameters
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
@@ -461,6 +523,7 @@ module Workflow =
             ] |> List.collect id |> Ok
         |> bindExists command.Source.Id
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal straightPublish (command: WorkflowId) workflowModel =
         match problems workflowModel with
@@ -468,6 +531,10 @@ module Workflow =
     let internal straightPublish (command: WorkflowId) (s:WorkflowModel) =
         match problems s with
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+    let internal straightPublish (command: WorkflowId) workflowModel =
+        match problems workflowModel with
+>>>>>>> cleanup type inference on function parameters
         | None ->
             [ WorkflowPublished { Id = command; Version = workflowModel.Version }
               VersionIncremented { Id = command; Version = workflowModel.Version.Inc } ]
@@ -503,11 +570,15 @@ module Workflow =
         |> bindExists command.Id
 
     let addState (command: AddStateCommand) =
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         fun s ->
 =======
         fun (s:WorkflowModel) ->
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+        fun s ->
+>>>>>>> cleanup type inference on function parameters
             nextStateId s.WorkflowId s
             |> Result.map (fun n ->
                 [ { WorkflowId = command.WorkflowId
@@ -515,11 +586,15 @@ module Workflow =
                     StateName = command.StateName } |> StateAdded ])
         |> bindExists command.WorkflowId
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let inline internal ifStateExists stateId x state =
 =======
     let inline internal ifStateExists stateId state x =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+    let inline internal ifStateExists stateId x state =
+>>>>>>> cleanup type inference on function parameters
         match state.States.ContainsKey stateId with
           | true -> Ok x
           | false -> UndefinedStateException(state.WorkflowId,stateId) :> exn |> Error
@@ -559,11 +634,15 @@ module Workflow =
             s |> ifStateExists command.State events
         |> bindExists command.WorkflowId
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal transitionCheck workflowModel transEvent x =
 =======
     let internal transitionCheck (s:WorkflowModel) (te:TransitionEditEvent) x =
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+    let internal transitionCheck workflowModel transEvent x =
+>>>>>>> cleanup type inference on function parameters
         let tryPick f transitionMap createErr x = 
             Map.tryPick f transitionMap
             |> function
@@ -580,11 +659,15 @@ module Workflow =
         |> Result.bind (fun y -> ifStateExists transEvent.TargetState y workflowModel)
 
     let addTransition (command: AddTransitionCommand) =
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         fun s ->
 =======
         fun (s:WorkflowModel) ->
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+        fun s ->
+>>>>>>> cleanup type inference on function parameters
             nextTransitionId command.WorkflowId s
             |> Result.bind (fun n ->
                 let editEvent = {
@@ -615,6 +698,7 @@ module Workflow =
         |> bindExists command.WorkflowId
 
     let dropTransition (command: DropTransitionCommand) =
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
         |> ifTransitionExists command.Transition
@@ -623,6 +707,10 @@ module Workflow =
             [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
             |> ifTransitionExists command.Transition s
 >>>>>>> refactor module and namespaces to move types up into namespace and out of modules
+=======
+        [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
+        |> ifTransitionExists command.Transition
+>>>>>>> cleanup type inference on function parameters
         |> bindExists command.WorkflowId
 
     let handle = 
@@ -641,11 +729,15 @@ module Workflow =
         | EditTransition command -> editTransition command
         | DropTransition command -> dropTransition command
 
+<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
 <<<<<<< f8f8c75a66b28a1de1a1a8f16f448a73cb3d6dcf
     let evolve (state:Workflow) event : Workflow =
 =======
     let evolve (state:Workflow) (event:Event): Workflow =
 >>>>>>> cleanup use of Workflow type alias for method signatures
+=======
+    let evolve (state:Workflow) event : Workflow =
+>>>>>>> cleanup type inference on function parameters
         let createNew workflowId name =
             let initialState = State.New "Initial State" 0u false
             let initialVersion = Version 0UL
