@@ -1,61 +1,228 @@
 namespace FlowMaster.Domain
 
-module Workflow =
-    type TransitionId = uint32
-    type StateId = uint32
+open Flowmaster.Common
 
-    type Transition = {
-        Id: TransitionId
-        Name: string
-        SourceState: StateId
-        TargetState: StateId
-    }
+type TransitionId = uint32
+type StateId = uint32
 
-    type State = {
-        Id: StateId
-        Name: string
-        Away: Set<TransitionId>
-        To: Set<TransitionId>
-        IsTerminal: bool
-    }
-      with
-        static member New name iD isTerminal = 
-            { Id = iD; Name = name; Away = Set.empty; To = Set.empty; IsTerminal = isTerminal }
+type Transition = {
+    Id: TransitionId
+    Name: string
+    SourceState: StateId
+    TargetState: StateId
+}
 
-    type WorkflowId = WorkflowId of System.Guid
+type State = {
+    Id: StateId
+    Name: string
+    Away: Set<TransitionId>
+    To: Set<TransitionId>
+    IsTerminal: bool
+}
+    with
+    static member New name iD isTerminal = 
+        { Id = iD; Name = name; Away = Set.empty; To = Set.empty; IsTerminal = isTerminal }
 
-    type Version = 
-        Version of uint64
-      with
-        member x.Inc = x |> (fun (Version i) -> i+1UL |> Version)
+type WorkflowId = WorkflowId of System.Guid
+
+type Version = 
+    Version of uint64
+    with
+    member x.Inc = x |> (fun (Version i) -> i+1UL |> Version)
     
-    type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
-    type Event =
-    | WorkflowCreated of WorkflowNamedEvent
-    | WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
-    | WorkflowCopied of WorkflowCopiedEvent
-    | WorkflowPublished of VersionedWorkflowEvent
-    | VersionIncremented of VersionedWorkflowEvent
-    | WorkflowWithdrawn of VersionedWorkflowEvent
-    | WorkflowNamed of WorkflowNamedEvent
-    | StateAdded of StateEditEvent
-    | StateDropped of StateEvent
-    | StateRenamed of StateEditEvent
-    | TerminalStateDesignated of StateEvent
-    | TerminalStateUnDesignated of StateEvent
-    | TransitionAdded of TransitionEditEvent
-    | TransitionChanged of TransitionEditEvent
-    | TransitionDropped of TransitionEvent
-    and WorkflowNamedEvent = { WorkflowId: WorkflowId; Name: string; }
-    and WorkflowEvent = WorkflowId
-    and VersionedWorkflowEvent = VersionedWorkflowId
-    and WorkflowCreatedAsCopyEvent = { WorkflowId: WorkflowId; Source: VersionedWorkflowId; CopyName: string }
-    and WorkflowCopiedEvent = { WorkflowId: WorkflowId; Version: Version; Target: WorkflowId }
-    and StateEditEvent = { WorkflowId: WorkflowId; StateId: StateId; StateName: string }
-    and StateEvent = { WorkflowId: WorkflowId; StateId: StateId }
-    and TransitionEditEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId; TransitionName: string; SourceState: StateId; TargetState: StateId }
-    and TransitionEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId }
+type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
+type Event =
+| WorkflowCreated of WorkflowNamedEvent
+| WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
+| WorkflowCopied of WorkflowCopiedEvent
+| WorkflowPublished of VersionedWorkflowEvent
+| VersionIncremented of VersionedWorkflowEvent
+| WorkflowWithdrawn of VersionedWorkflowEvent
+| WorkflowNamed of WorkflowNamedEvent
+| StateAdded of StateEditEvent
+| StateDropped of StateEvent
+| StateRenamed of StateEditEvent
+| TerminalStateDesignated of StateEvent
+| TerminalStateUnDesignated of StateEvent
+| TransitionAdded of TransitionEditEvent
+| TransitionChanged of TransitionEditEvent
+| TransitionDropped of TransitionDroppedEvent
+and WorkflowNamedEvent = { WorkflowId: WorkflowId; Name: string; }
+and WorkflowEvent = WorkflowId
+and VersionedWorkflowEvent = VersionedWorkflowId
+and WorkflowCreatedAsCopyEvent = { WorkflowId: WorkflowId; Source: VersionedWorkflowId; CopyName: string }
+and WorkflowCopiedEvent = { WorkflowId: WorkflowId; Version: Version; Target: WorkflowId }
+and StateEditEvent = { WorkflowId: WorkflowId; StateId: StateId; StateName: string }
+and StateEvent = { WorkflowId: WorkflowId; StateId: StateId }
+and TransitionEditEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId; TransitionName: string; SourceState: StateId; TargetState: StateId }
+and TransitionDroppedEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId }
 
+
+type CreateWorkflowCommand (workflowId, name) =
+    do
+        requireStringVal "name" name
+    member __.WorkflowId = workflowId
+    member __.Name = name
+
+type AddStateCommand (workflowId, stateName) =
+    do
+        requireStringVal "state name" stateName
+    member __.WorkflowId = workflowId
+    member __.StateName = stateName
+
+type EditStateCommand (workflowId, stateId, stateName) =
+    inherit AddStateCommand(workflowId, stateName)
+    member __.StateId = stateId
+
+type AddTransitionCommand (workflowId, transitionName, initialState, targetState) = 
+    do
+        requireStringVal "transition name" transitionName
+        match initialState = targetState with
+            | true ->
+            let errMsg = targetState |> sprintf "targetState must be different than initialState (%O)"
+            raise (System.ArgumentException(errMsg,"targetState"))
+            | false -> ()
+    member __.WorkflowId = workflowId
+    member __.TransitionName = transitionName
+    member __.InitialState = initialState
+    member __.TargetState = targetState
+
+type EditTransitionCommand (workflowId, transitionId, transitionName, initialState, targetState) = 
+    inherit AddTransitionCommand (workflowId, transitionName, initialState, targetState)
+    member __.TransitionId = transitionId
+
+type WorkflowCommand =
+| CreateWorkflow of CreateWorkflowCommand
+| CopyWorkflow of CopyCommand
+| PublishWorkflow of WorkflowId
+| RePublishWorkflow of VersionedWorkflowId 
+| WithdrawWorkflow of VersionedWorkflowId
+| AddState of AddStateCommand
+| RenameState of EditStateCommand
+| DropState of StateCommand
+| SetTerminalState of StateCommand
+| UnSetTerminalState of StateCommand
+| AddTransition of AddTransitionCommand
+| EditTransition of EditTransitionCommand
+| DropTransition of DropTransitionCommand
+and StateCommand = { WorkflowId: WorkflowId; State: StateId }
+and CopyCommand = { Source: VersionedWorkflowId; Target: WorkflowId; CopyName: string }
+and DropTransitionCommand = { WorkflowId: WorkflowId; Transition: TransitionId }
+
+type Problems = 
+    {
+    NoTerminalStates: bool
+    UnreachableStates: Set<StateId>
+    CannotReachAnyTerminalState: Set<StateId> }
+    with 
+    member x.Valid =
+        (not x.NoTerminalStates)
+        && (Set.isEmpty x.UnreachableStates)
+        && (Set.isEmpty x.CannotReachAnyTerminalState)
+
+type WorkflowException (message:string, workflowId:WorkflowId) = 
+    inherit exn(sprintf "Error for %O: %s" workflowId message)
+    member __.WorkflowId = workflowId
+    static member New i m = WorkflowException(m,i)
+    
+type MaxCountExceededException (message:string, workflowId:WorkflowId, maxCountAllowed:uint32) = 
+    inherit WorkflowException(message, workflowId)
+    with
+    member __.MaxCountAllowed = maxCountAllowed
+
+type DuplicateWorkflowIdException (workflowId:WorkflowId) = 
+    inherit WorkflowException("already exists",workflowId)
+
+type NonExistantWorkflowException (workflowId) =
+    inherit WorkflowException("workflow does not exist", workflowId)
+
+type UndefinedVersionException (workflowId:WorkflowId,version:Version) =
+    inherit WorkflowException(sprintf "%O not found" version,workflowId)
+    with
+    member __.Version = version
+    static member New w v = UndefinedVersionException(w,v)
+
+type InvalidWorkflowException (message:string, workflowId:WorkflowId, problems:Problems) = 
+    inherit WorkflowException("",workflowId)
+    let noneIfEmpty (s:string) = if s = "" then None else Some s
+    let problemMessage p =
+        let nts =
+            match p.NoTerminalStates with
+            | true -> Some "No Terminal States, at least one is required"
+            | false -> None
+        let us =
+            p.UnreachableStates 
+            |> Set.map string
+            |> Set.toSeq |> String.concat ", " |> noneIfEmpty
+            |> Option.map (sprintf "States unreachable from initial state: %s")
+        let crts =
+            p.CannotReachAnyTerminalState
+            |> Set.map string
+            |> Set.toSeq |> String.concat ", " |> noneIfEmpty
+            |> Option.map (sprintf "States that cannot reach a terminal state: %s")
+        [ nts; us; crts]            
+        |> List.choose id
+        |> Seq.ofList
+    override __.Message =
+        sprintf "%s%s" base.Message message
+        |> Seq.singleton |> Seq.append (problemMessage problems) |> String.concat "\n"
+    member __.Problems = problems
+
+type DuplicateStateNameException (workflowId:WorkflowId,stateName:string) =
+    inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
+    with
+    member __.StateName = stateName
+    static member New i s = DuplicateStateNameException(i,s)
+
+type UndefinedStateException (workflowId:WorkflowId,stateId:StateId) =
+    inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
+    with
+    member __.StateId = stateId
+
+type InitialStateException (message,workflowId) = inherit WorkflowException(message,workflowId)
+
+type UndefinedTransitionException (workflowId,transitionId) =
+    inherit WorkflowException(sprintf "%O not found" transitionId,workflowId)
+    with
+    member __.TransitionId = transitionId
+
+type DuplicateTransitionException (workflowId,transition:Transition) =
+    inherit WorkflowException(sprintf "%O with name '%s' already exists between source '%O' and target '%O'" transition.Id transition.Name transition.SourceState transition.TargetState,workflowId)
+    with
+    member __.Transition = transition
+
+type DuplicateTransitionNameException (workflowId,transition:Transition) =
+    inherit WorkflowException(sprintf "%O with unique name '%s' already exists" transition.Id transition.Name,workflowId)
+    with
+    member __.Transition = transition
+    
+type WorkflowModel =
+  { WorkflowId: WorkflowId
+    Name: string
+    Version: Version
+    States: Map<StateId,State>
+    InitialStateId: StateId
+    TerminalStates: Set<StateId>
+    Transitions: Map<TransitionId,Transition>
+    PublishedVersions: Set<Version>
+    Versions: Set<Version>
+    DirectDescendents: Set<WorkflowId>
+    Ancestors: VersionedWorkflowId seq }
+    member x.VersionedWorkflowId = { Id = x.WorkflowId; Version = x.Version }
+    member x.InitialState = Map.find x.InitialStateId x.States
+    member x.StateSet = x.States |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+    member x.TransitionSet = x.Transitions |> Map.toSeq |> Seq.map snd |> Set.ofSeq
+    member x.OrphanedStates =
+        let fromTo = x.TransitionSet |> Set.map (fun t -> t.SourceState, t.TargetState)
+        let initials = fromTo |> Set.map fst
+        let targets = fromTo |> Set.map snd
+        let orphanedTerminals = Set.difference x.TerminalStates targets
+        Set.union initials targets |> Set.difference x.StateSet
+        |> Set.union orphanedTerminals
+
+type Workflow = WorkflowModel option
+
+module Workflow =
 
     let eWorkflowId = function
         | WorkflowCreated e -> e.WorkflowId
@@ -74,63 +241,6 @@ module Workflow =
         | TransitionChanged e -> e.WorkflowId
         | TransitionDropped e -> e.WorkflowId
 
-    let internal requireStringVal (fieldName:string) value =
-        match System.String.IsNullOrWhiteSpace value with
-          | true -> raise (System.ArgumentNullException(fieldName))
-          | false -> ()
-
-    type CreateCommand (workflowId, name) =
-        do
-          requireStringVal "name" name
-        member __.WorkflowId = workflowId
-        member __.Name = name
-
-    type AddStateCommand (workflowId, stateName) =
-        do
-          requireStringVal "state name" stateName
-        member __.WorkflowId = workflowId
-        member __.StateName = stateName
-
-    type EditStateCommand (workflowId, stateId, stateName) =
-        inherit AddStateCommand(workflowId, stateName)
-        member __.StateId = stateId
-
-    type AddTransitionCommand (workflowId, transitionName, initialState, targetState) = 
-        do
-            requireStringVal "transition name" transitionName
-            match initialState = targetState with
-              | true ->
-                let errMsg = targetState |> sprintf "targetState must be different than initialState (%O)"
-                raise (System.ArgumentException(errMsg,"targetState"))
-              | false -> ()
-        member __.WorkflowId = workflowId
-        member __.TransitionName = transitionName
-        member __.InitialState = initialState
-        member __.TargetState = targetState
-
-    type EditTransitionCommand (workflowId, transitionId, transitionName, initialState, targetState) = 
-        inherit AddTransitionCommand (workflowId, transitionName, initialState, targetState)
-        member __.TransitionId = transitionId
-
-
-    type Command =
-    | CreateWorkflow of CreateCommand
-    | CopyWorkflow of CopyCommand
-    | PublishWorkflow of WorkflowId
-    | RePublishWorkflow of VersionedWorkflowId 
-    | WithdrawWorkflow of VersionedWorkflowId
-    | AddState of AddStateCommand
-    | RenameState of EditStateCommand
-    | DropState of StateCommand
-    | SetTerminalState of StateCommand
-    | UnSetTerminalState of StateCommand
-    | AddTransition of AddTransitionCommand
-    | EditTransition of EditTransitionCommand
-    | DropTransition of TransitionCommand
-    and StateCommand = { WorkflowId: WorkflowId; State: StateId }
-    and CopyCommand = { Source: VersionedWorkflowId; Target: WorkflowId; CopyName: string }
-    and TransitionCommand = { WorkflowId: WorkflowId; Transition: TransitionId }
-
     let workflowId = function
         | CreateWorkflow c -> c.WorkflowId
         | CopyWorkflow c -> c.Target
@@ -146,39 +256,18 @@ module Workflow =
         | EditTransition c -> c.WorkflowId
         | DropTransition c -> c.WorkflowId
 
-    type Problems = 
-      {
-        NoTerminalStates: bool
-        UnreachableStates: Set<StateId>
-        CannotReachAnyTerminalState: Set<StateId> }
-      with 
-        member x.Valid =
-            (not x.NoTerminalStates)
-            && (Set.isEmpty x.UnreachableStates)
-            && (Set.isEmpty x.CannotReachAnyTerminalState)
-
-    type WorkflowException (message:string, workflowId:WorkflowId) = 
-        inherit exn(sprintf "Error for %O: %s" workflowId message)
-        member __.WorkflowId = workflowId
-        static member New i m = WorkflowException(m,i)
-    
-    type MaxCountExceededException (message:string, workflowId:WorkflowId, maxCountAllowed:uint32) = 
-        inherit WorkflowException(message, workflowId)
-      with
-        member __.MaxCountAllowed = maxCountAllowed
-
-    let nextId typeName mp workflowId =
+    let internal nextId typeName mp workflowId =
         let maxVal = System.UInt32.MaxValue
         let getKeys () = mp |> Map.toArray |> Array.map fst
         match Map.containsKey maxVal mp with
-          | false ->  (getKeys () |> Array.last) + 1u |> Ok
-          | true -> 
+            | false ->  (getKeys () |> Array.last) + 1u |> Ok
+            | true -> 
             let keys = getKeys () 
             // exclude the default initial state
             let minKey = keys |> Array.tail |> Array.min
             match minKey > 1u with
-              | true -> minKey - 1u |> Ok
-              | false ->
+                | true -> minKey - 1u |> Ok
+                | false ->
                 keys
                 |> Array.pairwise
                 // looking for first gap (a prior deleted item)
@@ -186,7 +275,11 @@ module Workflow =
                 |> Option.map (fst >> ((+) 1u) )
                 //TODO should this actually be MaxVal + 1 ?
                 |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName |> MaxCountExceededException.New workflowId  :> exn)
-    let rec findAllTargets (foundTargets:Set<State>) (transitionsMap:Map<TransitionId,Transition>) statesMap (state:State) =
+
+    let nextStateId workFlowId x = nextId "states" x.States workFlowId
+    let nextTransitionId workFlowId x = nextId "transitions" x.Transitions workFlowId
+
+    let rec internal findAllTargets (foundTargets:Set<State>) (transitionsMap:Map<TransitionId,Transition>) statesMap (state:State) =
         let getDirectTargets st =
             st.Away 
             |> Set.map (fun ti -> 
@@ -202,65 +295,38 @@ module Workflow =
         |> Set.union directTargets
         |> Set.add state
 
-    type WorkflowModel =
-      { WorkflowId: WorkflowId
-        Name: string
-        Version: Version
-        States: Map<StateId,State>
-        InitialStateId: StateId
-        TerminalStates: Set<StateId>
-        Transitions: Map<TransitionId,Transition>
-        PublishedVersions: Set<Version>
-        Versions: Set<Version>
-        DirectDescendents: Set<WorkflowId>
-        Ancestors: VersionedWorkflowId seq }
-      member x.VersionedWorkflowId = { Id = x.WorkflowId; Version = x.Version }
-      member x.InitialState = Map.find x.InitialStateId x.States
-      member x.StateSet = x.States |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-      member x.NextStateId = nextId "states" x.States            
-      member x.TransitionSet = x.Transitions |> Map.toSeq |> Seq.map snd |> Set.ofSeq
-      member x.NextTransitionId = nextId "transitions" x.Transitions
-      member x.ReachableStates =
+    let reachableStates (x:WorkflowModel) =
         x.InitialState
         |> findAllTargets Set.empty x.Transitions x.States
         |> Set.map (fun y -> y.Id)
-      member x.OrphanedStates =
-        let fromTo = x.TransitionSet |> Set.map (fun t -> t.SourceState, t.TargetState)
-        let initials = fromTo |> Set.map fst
-        let targets = fromTo |> Set.map snd
-        let orphanedTerminals = Set.difference x.TerminalStates targets
-        Set.union initials targets |> Set.difference x.StateSet
-        |> Set.union orphanedTerminals
-      /// Valid Workflows meet the following criteria:
-      /// - Have at least one terminal state
-      /// - All states can reach at least one terminal state
-      /// - Every state is reachable from the initial state
-      member x.Problems =
-        let p =
-          let reachableStates = x.ReachableStates
-          { NoTerminalStates = x.TerminalStates.IsEmpty
-            UnreachableStates = Set.difference x.StateSet reachableStates
-            CannotReachAnyTerminalState =
-                reachableStates
-                |> Set.toSeq
-                |> Seq.choose (fun s ->
-                    Map.find s x.States
-                    |> findAllTargets Set.empty x.Transitions x.States
-                    |> Set.map (fun s' -> s'.Id)
-                    |> Set.intersect x.TerminalStates
-                    |> Set.isEmpty
-                    |> function | true -> Some s | false -> None)
-                |> Set.ofSeq }
-        match p.Valid with
-          | false -> Some p
-          | true -> None
+
+    /// Valid Workflows meet the following criteria:
+    /// - Have at least one terminal state
+    /// - All states can reach at least one terminal state
+    /// - Every state is reachable from the initial state
+    let problems (x:WorkflowModel) =
+      let p =
+        let reachable = reachableStates x
+        { NoTerminalStates = x.TerminalStates.IsEmpty
+          UnreachableStates = Set.difference x.StateSet reachable
+          CannotReachAnyTerminalState =
+            reachable
+            |> Set.toSeq
+            |> Seq.choose (fun s ->
+                Map.find s x.States
+                |> findAllTargets Set.empty x.Transitions x.States
+                |> Set.map (fun s' -> s'.Id)
+                |> Set.intersect x.TerminalStates
+                |> Set.isEmpty
+                |> function | true -> Some s | false -> None)
+            |> Set.ofSeq }
+      match p.Valid with
+        | false -> Some p
+        | true -> None
         
-      member x.Valid = x.Problems.IsNone
+    let valid x = (problems x).IsNone
 
-    type DuplicateWorkflowIdException (workflowId:WorkflowId) = 
-        inherit WorkflowException("already exists",workflowId)
-
-    let createWorkflow (command: CreateCommand) state =
+    let createWorkflow (command: CreateWorkflowCommand) state =
         match state with
         | None -> 
             let termState = State.New "Terminal State" 1u false
@@ -279,19 +345,10 @@ module Workflow =
         | _ -> 
             DuplicateWorkflowIdException(command.WorkflowId) :> exn |> Error
 
-    type NonExistantWorkflowException (workflowId) =
-      inherit WorkflowException("workflow does not exist", workflowId)
-
     let internal bindExists workflowId f =
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
-    type UndefinedVersionException (workflowId:WorkflowId,version:Version) =
-        inherit WorkflowException(sprintf "%O not found" version,workflowId)
-      with
-        member __.Version = version
-        static member New w v = UndefinedVersionException(w,v)
-
     let copyWorkflow (command: CopyCommand) =            
         fun (model:WorkflowModel) -> 
             [ [ WorkflowCopied { WorkflowId = command.Source.Id; Version = command.Source.Version; Target = command.Target }
@@ -312,34 +369,8 @@ module Workflow =
             ] |> List.collect id |> Ok
         |> bindExists command.Source.Id
 
-    type InvalidWorkflowException (message:string, workflowId:WorkflowId, problems:Problems) = 
-        inherit WorkflowException("",workflowId)
-        let noneIfEmpty (s:string) = if s = "" then None else Some s
-        let problemMessage p =
-            let nts =
-              match p.NoTerminalStates with
-                | true -> Some "No Terminal States, at least one is required"
-                | false -> None
-            let us =
-                p.UnreachableStates 
-                |> Set.map string
-                |> Set.toSeq |> String.concat ", " |> noneIfEmpty
-                |> Option.map (sprintf "States unreachable from initial state: %s")
-            let crts =
-                p.CannotReachAnyTerminalState
-                |> Set.map string
-                |> Set.toSeq |> String.concat ", " |> noneIfEmpty
-                |> Option.map (sprintf "States that cannot reach a terminal state: %s")
-            [ nts; us; crts]            
-            |> List.choose id
-            |> Seq.ofList
-        override __.Message =
-            sprintf "%s%s" base.Message message
-            |> Seq.singleton |> Seq.append (problemMessage problems) |> String.concat "\n"
-        member __.Problems = problems
-    
     let internal straightPublish (command: WorkflowId) (s:WorkflowModel) =
-        match s.Problems with
+        match problems s with
         | None ->
             [ WorkflowPublished { Id = command; Version = s.Version }
               VersionIncremented { Id = command; Version = s.Version.Inc } ]
@@ -374,25 +405,14 @@ module Workflow =
               | false -> Ok [])
         |> bindExists command.Id
 
-    type DuplicateStateNameException (workflowId:WorkflowId,stateName:string) =
-        inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
-      with
-        member __.StateName = stateName
-        static member New i s = DuplicateStateNameException(i,s)
-
     let addState (command: AddStateCommand) =
         fun (s:WorkflowModel) ->
-            s.NextStateId s.WorkflowId
+            nextStateId s.WorkflowId s
             |> Result.map (fun n ->
                 [ { WorkflowId = command.WorkflowId
                     StateId = n
                     StateName = command.StateName } |> StateAdded ])
         |> bindExists command.WorkflowId
-
-    type UndefinedStateException (workflowId:WorkflowId,stateId:StateId) =
-        inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
-      with
-        member __.StateId = stateId
 
     let inline internal ifStateExists stateId state x =
         match state.States.ContainsKey stateId with
@@ -404,8 +424,6 @@ module Workflow =
             [ StateRenamed { WorkflowId = command.WorkflowId; StateId = command.StateId; StateName = command.StateName } ]
             |> ifStateExists command.StateId s
         |> bindExists command.WorkflowId
-
-    type InitialStateException (message,workflowId) = inherit WorkflowException(message,workflowId)
 
     let inline internal initialStateError command errMsg x =
         match command.State <> 0u with
@@ -436,21 +454,6 @@ module Workflow =
             |> ifStateExists command.State s
         |> bindExists command.WorkflowId
 
-    type UndefinedTransitionException (workflowId,transitionId) =
-        inherit WorkflowException(sprintf "%O not found" transitionId,workflowId)
-      with
-        member __.TransitionId = transitionId
-
-    type DuplicateTransitionException (workflowId,transition:Transition) =
-        inherit WorkflowException(sprintf "%O with name '%s' already exists between source '%O' and target '%O'" transition.Id transition.Name transition.SourceState transition.TargetState,workflowId)
-      with
-        member __.Transition = transition
-
-    type DuplicateTransitionNameException (workflowId,transition:Transition) =
-        inherit WorkflowException(sprintf "%O with name '%s' already exists" transition.Id transition.Name,workflowId)
-      with
-        member __.Transition = transition
-
     let internal transitionCheck (s:WorkflowModel) (te:TransitionEditEvent) x =
         let tryPick f transitionMap createErr x = 
             Map.tryPick f transitionMap
@@ -469,7 +472,7 @@ module Workflow =
 
     let addTransition (command: AddTransitionCommand) =
         fun (s:WorkflowModel) ->
-            s.NextTransitionId command.WorkflowId
+            nextTransitionId command.WorkflowId s
             |> Result.bind (fun n ->
                 let editEvent = {
                     WorkflowId = command.WorkflowId
@@ -499,7 +502,7 @@ module Workflow =
             |> Result.bind (transitionCheck { s with Transitions = s.Transitions |> Map.remove command.TransitionId } editEvent)
         |> bindExists command.WorkflowId
 
-    let dropTransition (command: TransitionCommand) =
+    let dropTransition (command: DropTransitionCommand) =
         fun s ->
             [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
             |> ifTransitionExists command.Transition s
