@@ -524,7 +524,7 @@ module Workflow =
         | EditTransition command -> editTransition command
         | DropTransition command -> dropTransition command
 
-    let evolve (state:WorkflowModel option) (event:Event) =
+    let evolve (state:Workflow) (event:Event): Workflow =
         let createNew workflowId name =
             let initialState = State.New "Initial State" 0u false
             let initialVersion = Version 0UL
@@ -568,8 +568,9 @@ module Workflow =
           function
           //We are ignoring possible error where WorkflowCreated event on Some state
           //However, this is caught by not allowing create command on Some
-          | _, WorkflowCreated e -> createNew e.WorkflowId e.Name |> Some
+          | None, WorkflowCreated e -> createNew e.WorkflowId e.Name |> Some
           | None, _ -> None
+          | Some _, WorkflowCreated _ -> None
           | Some s, WorkflowCreatedAsCopy e ->
             { s with
                 WorkflowId = e.WorkflowId 
