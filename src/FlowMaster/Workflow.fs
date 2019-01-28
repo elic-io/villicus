@@ -31,7 +31,11 @@ type Version =
     member x.Inc = x |> (fun (Version i) -> i+1UL |> Version)
     
 type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type WorkflowEvent =
+=======
+type Event =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 | WorkflowCreated of WorkflowNamedEvent
 | WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
 | WorkflowCopied of WorkflowCopiedEvent
@@ -48,6 +52,10 @@ type WorkflowEvent =
 | TransitionChanged of TransitionEditEvent
 | TransitionDropped of TransitionDroppedEvent
 and WorkflowNamedEvent = { WorkflowId: WorkflowId; Name: string; }
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
+=======
+and WorkflowEvent = WorkflowId
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 and VersionedWorkflowEvent = VersionedWorkflowId
 and WorkflowCreatedAsCopyEvent = { WorkflowId: WorkflowId; Source: VersionedWorkflowId; CopyName: string }
 and WorkflowCopiedEvent = { WorkflowId: WorkflowId; Version: Version; Target: WorkflowId }
@@ -63,6 +71,7 @@ type CreateWorkflowCommand (workflowId, name) =
     member __.WorkflowId = workflowId
     member __.Name = name
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type CopyCommand (source, target, copyName) =
     do
         requireStringVal "copyName" copyName
@@ -70,6 +79,8 @@ type CopyCommand (source, target, copyName) =
     member __.Target = target
     member __.CopyName = copyName
 
+=======
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 type AddStateCommand (workflowId, stateName) =
     do
         requireStringVal "state name" stateName
@@ -112,6 +123,10 @@ type WorkflowCommand =
 | EditTransition of EditTransitionCommand
 | DropTransition of DropTransitionCommand
 and StateCommand = { WorkflowId: WorkflowId; State: StateId }
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
+=======
+and CopyCommand = { Source: VersionedWorkflowId; Target: WorkflowId; CopyName: string }
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 and DropTransitionCommand = { WorkflowId: WorkflowId; Transition: TransitionId }
 
 type Problems = 
@@ -125,31 +140,53 @@ type Problems =
         && (Set.isEmpty x.UnreachableStates)
         && (Set.isEmpty x.CannotReachAnyTerminalState)
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type WorkflowException (message, workflowId) = 
+=======
+type WorkflowException (message:string, workflowId:WorkflowId) = 
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit exn(sprintf "Error for %O: %s" workflowId message)
     member __.WorkflowId = workflowId
     static member New i m = WorkflowException(m,i)
     
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type MaxCountExceededException (message, workflowId, maxCountAllowed) = 
+=======
+type MaxCountExceededException (message:string, workflowId:WorkflowId, maxCountAllowed:uint32) = 
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit WorkflowException(message, workflowId)
     with
     member __.MaxCountAllowed = maxCountAllowed
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type DuplicateWorkflowIdException (workflowId) = 
+=======
+type DuplicateWorkflowIdException (workflowId:WorkflowId) = 
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit WorkflowException("already exists",workflowId)
 
 type NonExistantWorkflowException (workflowId) =
     inherit WorkflowException("workflow does not exist", workflowId)
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type UndefinedVersionException (workflowId,version) =
+=======
+type UndefinedVersionException (workflowId:WorkflowId,version:Version) =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit WorkflowException(sprintf "%O not found" version,workflowId)
     with
     member __.Version = version
     static member New w v = UndefinedVersionException(w,v)
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type InvalidWorkflowException (message, workflowId, problems) = 
     inherit WorkflowException("",workflowId)
     let noneIfEmpty s = if s = "" then None else Some s
+=======
+type InvalidWorkflowException (message:string, workflowId:WorkflowId, problems:Problems) = 
+    inherit WorkflowException("",workflowId)
+    let noneIfEmpty (s:string) = if s = "" then None else Some s
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     let problemMessage p =
         let nts =
             match p.NoTerminalStates with
@@ -173,13 +210,21 @@ type InvalidWorkflowException (message, workflowId, problems) =
         |> Seq.singleton |> Seq.append (problemMessage problems) |> String.concat "\n"
     member __.Problems = problems
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type DuplicateStateNameException (workflowId,stateName) =
+=======
+type DuplicateStateNameException (workflowId:WorkflowId,stateName:string) =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
     with
     member __.StateName = stateName
     static member New i s = DuplicateStateNameException(i,s)
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type UndefinedStateException (workflowId,stateId) =
+=======
+type UndefinedStateException (workflowId:WorkflowId,stateId:StateId) =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
     with
     member __.StateId = stateId
@@ -281,8 +326,13 @@ module Workflow =
                 //TODO should this actually be MaxVal + 1 ?
                 |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName |> MaxCountExceededException.New workflowId  :> exn)
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal nextStateId workFlowId workflowModel = nextId "states" workflowModel.States workFlowId
     let internal nextTransitionId workFlowId workflowModel = nextId "transitions" workflowModel.Transitions workFlowId
+=======
+    let nextStateId workFlowId x = nextId "states" x.States workFlowId
+    let nextTransitionId workFlowId x = nextId "transitions" x.Transitions workFlowId
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 
     let rec internal findAllTargets (foundTargets:Set<State>) (transitionsMap:Map<TransitionId,Transition>) statesMap (state:State) =
         let getDirectTargets st =
@@ -300,6 +350,7 @@ module Workflow =
         |> Set.union directTargets
         |> Set.add state
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     /// Valid Workflows meet the following criteria:
     /// - Have at least one terminal state
     /// - All states can reach at least one terminal state
@@ -330,6 +381,39 @@ module Workflow =
         
     let valid workflowModel = (problems workflowModel).IsNone
 
+=======
+    let reachableStates (x:WorkflowModel) =
+        x.InitialState
+        |> findAllTargets Set.empty x.Transitions x.States
+        |> Set.map (fun y -> y.Id)
+
+    /// Valid Workflows meet the following criteria:
+    /// - Have at least one terminal state
+    /// - All states can reach at least one terminal state
+    /// - Every state is reachable from the initial state
+    let problems (x:WorkflowModel) =
+      let p =
+        let reachable = reachableStates x
+        { NoTerminalStates = x.TerminalStates.IsEmpty
+          UnreachableStates = Set.difference x.StateSet reachable
+          CannotReachAnyTerminalState =
+            reachable
+            |> Set.toSeq
+            |> Seq.choose (fun s ->
+                Map.find s x.States
+                |> findAllTargets Set.empty x.Transitions x.States
+                |> Set.map (fun s' -> s'.Id)
+                |> Set.intersect x.TerminalStates
+                |> Set.isEmpty
+                |> function | true -> Some s | false -> None)
+            |> Set.ofSeq }
+      match p.Valid with
+        | false -> Some p
+        | true -> None
+        
+    let valid x = (problems x).IsNone
+
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
     let createWorkflow (command: CreateWorkflowCommand) state =
         match state with
         | None -> 
@@ -349,7 +433,11 @@ module Workflow =
         | _ -> 
             DuplicateWorkflowIdException(command.WorkflowId) :> exn |> Error
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal bindExists workflowId f : (Workflow -> Result<'a,exn>) =
+=======
+    let internal bindExists workflowId f =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
@@ -373,8 +461,13 @@ module Workflow =
             ] |> List.collect id |> Ok
         |> bindExists command.Source.Id
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal straightPublish (command: WorkflowId) workflowModel =
         match problems workflowModel with
+=======
+    let internal straightPublish (command: WorkflowId) (s:WorkflowModel) =
+        match problems s with
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
         | None ->
             [ WorkflowPublished { Id = command; Version = workflowModel.Version }
               VersionIncremented { Id = command; Version = workflowModel.Version.Inc } ]
@@ -410,7 +503,11 @@ module Workflow =
         |> bindExists command.Id
 
     let addState (command: AddStateCommand) =
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         fun s ->
+=======
+        fun (s:WorkflowModel) ->
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
             nextStateId s.WorkflowId s
             |> Result.map (fun n ->
                 [ { WorkflowId = command.WorkflowId
@@ -418,7 +515,11 @@ module Workflow =
                     StateName = command.StateName } |> StateAdded ])
         |> bindExists command.WorkflowId
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let inline internal ifStateExists stateId x state =
+=======
+    let inline internal ifStateExists stateId state x =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
         match state.States.ContainsKey stateId with
           | true -> Ok x
           | false -> UndefinedStateException(state.WorkflowId,stateId) :> exn |> Error
@@ -458,7 +559,11 @@ module Workflow =
             s |> ifStateExists command.State events
         |> bindExists command.WorkflowId
 
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let internal transitionCheck workflowModel transEvent x =
+=======
+    let internal transitionCheck (s:WorkflowModel) (te:TransitionEditEvent) x =
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
         let tryPick f transitionMap createErr x = 
             Map.tryPick f transitionMap
             |> function
@@ -475,7 +580,11 @@ module Workflow =
         |> Result.bind (fun y -> ifStateExists transEvent.TargetState y workflowModel)
 
     let addTransition (command: AddTransitionCommand) =
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         fun s ->
+=======
+        fun (s:WorkflowModel) ->
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
             nextTransitionId command.WorkflowId s
             |> Result.bind (fun n ->
                 let editEvent = {
@@ -506,8 +615,14 @@ module Workflow =
         |> bindExists command.WorkflowId
 
     let dropTransition (command: DropTransitionCommand) =
+<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
         [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
         |> ifTransitionExists command.Transition
+=======
+        fun s ->
+            [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
+            |> ifTransitionExists command.Transition s
+>>>>>>> refactor module and namespaces to move types up into namespace and out of modules
         |> bindExists command.WorkflowId
 
     let handle = 
