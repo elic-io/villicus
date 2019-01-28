@@ -8,8 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Util.fs" />
     <Compile Include="YoLo.fs" />
-    <Compile Include="Tests.fs" />
+    <Compile Include="WorkflowTests.fs" />
+    <Compile Include="JourneyTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

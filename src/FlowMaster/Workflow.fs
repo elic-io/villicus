@@ -15,11 +15,12 @@ module Workflow =
         Id: StateId
         Name: string
         Away: Set<TransitionId>
-        To: Set<TransitionId> 
+        To: Set<TransitionId>
+        IsTerminal: bool
     }
       with
-        static member New name iD = 
-            { Id = iD; Name = name; Away = Set.empty; To = Set.empty }
+        static member New name iD isTerminal = 
+            { Id = iD; Name = name; Away = Set.empty; To = Set.empty; IsTerminal = isTerminal }
 
     type WorkflowId = WorkflowId of System.Guid
 
@@ -256,15 +257,13 @@ module Workflow =
         
       member x.Valid = x.Problems.IsNone
 
-    type WorkflowState = WorkflowModel option
-    
     type DuplicateWorkflowIdException (workflowId:WorkflowId) = 
         inherit WorkflowException("already exists",workflowId)
 
     let createWorkflow (command: CreateCommand) state =
         match state with
         | None -> 
-            let termState = State.New "Terminal State" 1u
+            let termState = State.New "Terminal State" 1u false
             [ WorkflowCreated { WorkflowId = command.WorkflowId; Name = command.Name }
               // initial state is added by creation event processing
               // this is because initial state is not an optional parameter
@@ -282,7 +281,6 @@ module Workflow =
 
     type NonExistantWorkflowException (workflowId) =
       inherit WorkflowException("workflow does not exist", workflowId)
-
 
     let internal bindExists workflowId f =
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
@@ -525,7 +523,7 @@ module Workflow =
 
     let evolve (state:WorkflowModel option) (event:Event) =
         let createNew workflowId name =
-            let initialState = State.New "Initial State" 0u
+            let initialState = State.New "Initial State" 0u false
             let initialVersion = Version 0UL
             { WorkflowId = workflowId
               Version = initialVersion
@@ -582,7 +580,7 @@ module Workflow =
           | Some s, VersionIncremented e -> Some { s with Version = e.Version; Versions = s.Versions |> Set.add e.Version }
           | Some s, WorkflowWithdrawn e -> Some { s with PublishedVersions = s.PublishedVersions |> Set.remove e.Version }
           | Some s, WorkflowNamed e -> Some { s with Name = e.Name }
-          | Some s, StateAdded e -> Some { s with States = Map.add e.StateId (State.New e.StateName e.StateId) s.States }
+          | Some s, StateAdded e -> Some { s with States = Map.add e.StateId (State.New e.StateName e.StateId false) s.States }
           | Some s, StateRenamed e ->
             let st = s.States |> Map.find e.StateId 
             Some { s with States = s.States |> Map.add e.StateId { st with Name = e.StateName } }
@@ -591,8 +589,16 @@ module Workflow =
                 States = Map.remove e.StateId s.States 
                 Transitions = s.Transitions |> Map.filter (fun _ t -> t.SourceState <> e.StateId && t.TargetState <> e.StateId) }
             |> Some
-          | Some s, TerminalStateDesignated e -> Some { s with TerminalStates = s.TerminalStates |> Set.add e.StateId }
-          | Some s, TerminalStateUnDesignated e -> Some { s with TerminalStates = s.TerminalStates |> Set.remove e.StateId }
+          | Some s, TerminalStateDesignated e ->
+            let termState = { (s.States |> Map.find e.StateId) with IsTerminal = true }
+            { s with 
+                TerminalStates = s.TerminalStates |> Set.add e.StateId
+                States = s.States |> Map.add e.StateId termState } |> Some
+          | Some s, TerminalStateUnDesignated e ->
+            let nonTermState = { (s.States |> Map.find e.StateId) with IsTerminal = false }
+            { s with 
+                TerminalStates = s.TerminalStates |> Set.remove e.StateId
+                States = s.States |> Map.add e.StateId nonTermState } |> Some 
           | Some s, TransitionAdded e -> addTransition e s |> Some
           | Some s, TransitionChanged e -> remTransition e.TransitionId s |> addTransition e |> Some
           | Some s, TransitionDropped e ->

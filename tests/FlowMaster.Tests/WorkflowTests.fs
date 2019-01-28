@@ -1,25 +1,13 @@
-module Tests
+module WorkflowTests
 
 open System
 open Xunit
 open FlowMaster.Domain.Workflow
 open FlowMaster.ResultBuilder
 open Xunit.Sdk
-
-
-//TODO: Look into using Assert.Raises instead?
-let inline expectExn<'e when 'e :> exn> (f:unit->unit) =
-    try
-        f ()
-    with 
-      :? 'e -> ()
-      | e -> raise e
+open TestUtil
 
 let argNull = expectExn<ArgumentNullException>
-
-[<Fact>]
-let ``Expect Exception Works`` () =
-    expectExn<Exception> <| fun () -> failwith "generic Exception"
 
 [<Fact>]
 let ``CreateCommand missing name`` () =    
@@ -359,7 +347,9 @@ let ``set terminal state`` () =
     |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; State = 2u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun s ->
-        Assert.True(s.TerminalStates.Contains 2u))
+        let newTerminal = s.States |> Map.find 2u
+        Assert.True(s.TerminalStates.Contains 2u)
+        Assert.True(newTerminal.IsTerminal))
     |> Result.mapError(fun e -> raise e)
     |> ignore
 
@@ -390,7 +380,8 @@ let ``unset terminal state`` () =
     |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; State = 2u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun s ->
-        Assert.False(s.TerminalStates.Contains 2u))
+        Assert.False(s.TerminalStates.Contains 2u)
+        Assert.False((s.States |> Map.find 2u).IsTerminal))
     |> Result.mapError(fun e -> raise e)
     |> ignore
 
