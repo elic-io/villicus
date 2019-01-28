@@ -81,19 +81,6 @@ module Journey =
 
     let internal bindJourneyState journeyId f = toResult journeyId >> Result.bind f
 
-    type InvalidTransitionException (message,journeyId,transitionId,stateId) =
-        inherit JourneyException(
-            seq { 
-                yield sprintf "%O is not valid from %O" transitionId stateId
-                if System.String.IsNullOrWhiteSpace message then () else
-                    yield message }
-              |> String.concat ": "
-            , journeyId)
-      with
-        member __.TransitionId = transitionId
-        member __.StateId = stateId
-        new(journeyId,transitionId,stateId) = InvalidTransitionException ("",journeyId,transitionId,stateId)
-
     let transition<'t> (command: TransitionCommand) (workflow:WorkflowModel) =
         (fun (s:JourneyModel<'t>) ->
             Map.tryFind command.TransitionId workflow.Transitions
