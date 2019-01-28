@@ -1,6 +1,6 @@
-namespace FlowMaster.Domain
+namespace Villicus.Domain
 
-open Flowmaster.Common
+open Villicus.Common
 
 type TransitionId = uint32
 type StateId = uint32
@@ -63,7 +63,7 @@ type CreateWorkflowCommand (workflowId, name) =
     member __.WorkflowId = workflowId
     member __.Name = name
 
-type CopyCommand (source, target, copyName) =
+type CopyWorkflowCommand (source, target, copyName) =
     do
         requireStringVal "copyName" copyName
     member __.Source = source
@@ -99,7 +99,7 @@ type EditTransitionCommand (workflowId, transitionId, transitionName, initialSta
 
 type WorkflowCommand =
 | CreateWorkflow of CreateWorkflowCommand
-| CopyWorkflow of CopyCommand
+| CopyWorkflow of CopyWorkflowCommand
 | PublishWorkflow of WorkflowId
 | RePublishWorkflow of VersionedWorkflowId 
 | WithdrawWorkflow of VersionedWorkflowId
@@ -119,7 +119,7 @@ type Problems =
     NoTerminalStates: bool
     UnreachableStates: Set<StateId>
     CannotReachAnyTerminalState: Set<StateId> }
-    with 
+  with 
     member x.Valid =
         (not x.NoTerminalStates)
         && (Set.isEmpty x.UnreachableStates)
@@ -132,7 +132,7 @@ type WorkflowException (message, workflowId) =
     
 type MaxCountExceededException (message, workflowId, maxCountAllowed) = 
     inherit WorkflowException(message, workflowId)
-    with
+  with
     member __.MaxCountAllowed = maxCountAllowed
 
 type DuplicateWorkflowIdException (workflowId) = 
@@ -175,30 +175,30 @@ type InvalidWorkflowException (message, workflowId, problems) =
 
 type DuplicateStateNameException (workflowId,stateName) =
     inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
-    with
+  with
     member __.StateName = stateName
     static member New i s = DuplicateStateNameException(i,s)
 
 type UndefinedStateException (workflowId,stateId) =
     inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
-    with
+  with
     member __.StateId = stateId
 
 type InitialStateException (message,workflowId) = inherit WorkflowException(message,workflowId)
 
 type UndefinedTransitionException (workflowId,transitionId) =
     inherit WorkflowException(sprintf "%O not found" transitionId,workflowId)
-    with
+  with
     member __.TransitionId = transitionId
 
 type DuplicateTransitionException (workflowId,transition:Transition) =
     inherit WorkflowException(sprintf "%O with name '%s' already exists between source '%O' and target '%O'" transition.Id transition.Name transition.SourceState transition.TargetState,workflowId)
-    with
+  with
     member __.Transition = transition
 
 type DuplicateTransitionNameException (workflowId,transition:Transition) =
     inherit WorkflowException(sprintf "%O with unique name '%s' already exists" transition.Id transition.Name,workflowId)
-    with
+  with
     member __.Transition = transition
     
 type WorkflowModel =
@@ -353,7 +353,7 @@ module Workflow =
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
-    let copyWorkflow (command: CopyCommand) =            
+    let copyWorkflow (command: CopyWorkflowCommand) =            
         fun (model:WorkflowModel) -> 
             [ [ WorkflowCopied { WorkflowId = command.Source.Id; Version = command.Source.Version; Target = command.Target }
                 VersionIncremented { Id = command.Source.Id; Version = model.Version.Inc }

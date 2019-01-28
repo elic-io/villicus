@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\FlowMaster\FlowMaster.fsproj" />
+    <ProjectReference Include="..\..\src\Villicus\Villicus.fsproj" />
   </ItemGroup>
 
 </Project>

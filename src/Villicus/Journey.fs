@@ -1,4 +1,4 @@
-namespace FlowMaster.Domain
+namespace Villicus.Domain
 
 type JourneyId = JourneyId of System.Guid
 

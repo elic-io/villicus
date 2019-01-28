@@ -2,7 +2,7 @@ module WorkflowTests
 
 open System
 open Xunit
-open FlowMaster.Domain
+open Villicus.Domain
 open TestUtil
 
 let argNull = expectExn<ArgumentNullException>
@@ -282,9 +282,9 @@ let ``copy Workflow`` () =
             | Ok twf -> match twf with | Some x -> x | None -> failwith "won't happen"
             | Error ex -> raise ex
     let copyCmd =
-        { Target = Guid.NewGuid() |> WorkflowId
-          Source = { Id = newWorkflowId; Version = 1UL |> Version }
-          CopyName = oldWorkflow.Name |> sprintf "Copy of %s" }
+        CopyWorkflowCommand({ Id = newWorkflowId; Version = 1UL |> Version },
+          Guid.NewGuid() |> WorkflowId,
+          oldWorkflow.Name |> sprintf "Copy of %s")
         |> CopyWorkflow
 
     let events = testWorkflow |> Result.bind(Workflow.handle copyCmd)
