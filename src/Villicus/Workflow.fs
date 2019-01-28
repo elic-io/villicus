@@ -1,6 +1,6 @@
-namespace FlowMaster.Domain
+namespace Villicus.Domain
 
-open Flowmaster.Common
+open Villicus.Common
 
 type TransitionId = uint32
 type StateId = uint32
