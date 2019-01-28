@@ -641,7 +641,11 @@ module Workflow =
         | EditTransition command -> editTransition command
         | DropTransition command -> dropTransition command
 
+<<<<<<< f8f8c75a66b28a1de1a1a8f16f448a73cb3d6dcf
     let evolve (state:Workflow) event : Workflow =
+=======
+    let evolve (state:Workflow) (event:Event): Workflow =
+>>>>>>> cleanup use of Workflow type alias for method signatures
         let createNew workflowId name =
             let initialState = State.New "Initial State" 0u false
             let initialVersion = Version 0UL
