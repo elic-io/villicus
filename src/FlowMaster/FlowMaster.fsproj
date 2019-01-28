@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="YoLo.fs" />
+    <Compile Include="Common.fs" />
     <Compile Include="ResultBuilder.fs" />
     <Compile Include="Workflow.fs" />
     <Compile Include="Journey.fs" />

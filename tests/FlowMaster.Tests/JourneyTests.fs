@@ -3,14 +3,13 @@ module JourneyTests
 open System
 open Xunit
 open FlowMaster.Domain
-open FlowMaster.Domain.Journey
 open TestUtil
 
 let subject = Guid.NewGuid() :> obj
 let newJourneyId = Guid.NewGuid() |> JourneyId
 let testWorkflow =
     WorkflowTests.testWorkflow
-    |> WorkflowTests.processCmd (Workflow.AddTransition (Workflow.AddTransitionCommand(WorkflowTests.newWorkflowId,"Reactivate",1u,0u)))
+    |> WorkflowTests.processCmd (AddTransition (AddTransitionCommand(WorkflowTests.newWorkflowId,"Reactivate",1u,0u)))
     |> Result.bind(Result.ofOption (exn "workflow doesn't exist"))
 
 let lookup vwid =
@@ -19,17 +18,17 @@ let lookup vwid =
         let v = w.VersionedWorkflowId
         match vwid = v with
           | true -> Ok w
-          | false -> Workflow.UndefinedVersionException(v.Id,v.Version) :> exn |> Error)
+          | false -> UndefinedVersionException(v.Id,v.Version) :> exn |> Error)
     //|> Result.mapError(fun e -> raise e)
 
-let createTest (workflow:Result<Workflow.WorkflowModel,exn>) =
+let createTest (workflow:Result<WorkflowModel,exn>) =
     workflow
     |> Result.bind(fun wf -> 
         let createCmd = { 
             JourneyId = newJourneyId
             VersionedWorkflowId = wf.VersionedWorkflowId
             Subject = subject }
-        createJourney lookup createCmd NonExistingJourney)
+        Journey.createJourney lookup createCmd NonExistingJourney)
 
 [<Fact>]
 let ``create journey`` () =
@@ -39,9 +38,9 @@ let ``create journey`` () =
             JourneyId = newJourneyId
             VersionedWorkflowId = wf.VersionedWorkflowId
             Subject = subject }
-        createJourney lookup createCmd NonExistingJourney
-        |> Result.map(List.fold (evolve wf) NonExistingJourney)
-        |> Result.bind (toResult newJourneyId)
+        Journey.createJourney lookup createCmd NonExistingJourney
+        |> Result.map(List.fold (Journey.evolve wf) NonExistingJourney)
+        |> Result.bind (Journey.toResult newJourneyId)
         |> Result.map(fun j -> 
             Assert.Equal(subject,j.Subject)
             Assert.Equal(wf.InitialState,j.CurrentState)
@@ -57,26 +56,26 @@ let ``create journey fails when lookup fails`` () =
         |> Result.bind(fun wf -> 
             let createCmd = { 
                 JourneyId = newJourneyId
-                VersionedWorkflowId = { wf.VersionedWorkflowId with Version = Workflow.Version 77777UL }
+                VersionedWorkflowId = { wf.VersionedWorkflowId with Version = Version 77777UL }
                 Subject = subject }
-            createJourney lookup createCmd NonExistingJourney)
+            Journey.createJourney lookup createCmd NonExistingJourney)
         |> Result.injectError(fun e -> raise e)
         |> ignore
-    |> expectExn<Workflow.UndefinedVersionException>
+    |> expectExn<UndefinedVersionException>
 
 
 let testJourney =
     testWorkflow
     |> Result.bind(fun wf ->
         createTest testWorkflow
-        |> Result.map(List.fold (evolve wf) NonExistingJourney))
+        |> Result.map(List.fold (Journey.evolve wf) NonExistingJourney))
 
 let handleEvolve command state =
     testWorkflow
     |> Result.bind(fun workflow ->
         state
-        |> handle lookup command
-        |> Result.map (List.fold (evolve workflow) state))
+        |> Journey.handle lookup command
+        |> Result.map (List.fold (Journey.evolve workflow) state))
 
 let processCmd command = handleEvolve command |> Result.bind
 
@@ -103,7 +102,7 @@ let ``invalid transition that doesn't exist`` () =
         |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 57463u })
         |> Result.injectError(fun e -> raise e)
         |> ignore
-    |> expectExn<Workflow.UndefinedTransitionException>
+    |> expectExn<UndefinedTransitionException>
 
 [<Fact>]
 let ``invalid transition`` () =

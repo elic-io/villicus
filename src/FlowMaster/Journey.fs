@@ -7,16 +7,16 @@ type JourneyEvent<'t> =
 | Transitioned of TransitionEvent  
 | Terminated of TerminationEvent
 | ReActivated of JourneyId
-and JourneyCreationEvent<'t> = { JourneyId: JourneyId; VersionedWorkflowId: Workflow.VersionedWorkflowId; Subject: 't }
-and TerminationEvent = { JourneyId: JourneyId; TerminalStateId: Workflow.StateId; TerminalStateName: string }
-and TransitionEvent = { JourneyId: JourneyId; TransitionId: Workflow.TransitionId; State: Workflow.State }
+and JourneyCreationEvent<'t> = { JourneyId: JourneyId; VersionedWorkflowId: VersionedWorkflowId; Subject: 't }
+and TerminationEvent = { JourneyId: JourneyId; TerminalStateId: StateId; TerminalStateName: string }
+and TransitionEvent = { JourneyId: JourneyId; TransitionId: TransitionId; State: State }
 
 type JourneyCommand<'t> =
 | CreateJourney of CreateCommand<'t>
 | Transition of TransitionCommand
 | ReActivate of TransitionCommand
-and CreateCommand<'t> = { JourneyId: JourneyId; VersionedWorkflowId: Workflow.VersionedWorkflowId; Subject: 't }
-and TransitionCommand = { JourneyId: JourneyId; TransitionId: Workflow.TransitionId }
+and CreateCommand<'t> = { JourneyId: JourneyId; VersionedWorkflowId: VersionedWorkflowId; Subject: 't }
+and TransitionCommand = { JourneyId: JourneyId; TransitionId: TransitionId }
 
 type Journey<'t> = 
 | ActiveJourney of JourneyModel<'t>
@@ -24,12 +24,36 @@ type Journey<'t> =
 | NonExistingJourney
 and JourneyModel<'t> = {
     JourneyId: JourneyId
-    Workflow: Workflow.VersionedWorkflowId
+    Workflow: VersionedWorkflowId
     Subject: 't
-    CurrentState: Workflow.State }
+    CurrentState: State }
   with 
     member x.ActiveTransitions = x.CurrentState.To
 
+type JourneyException (message, journeyId) = 
+    inherit exn(sprintf "Error for %O: %s" journeyId message)
+    member __.JourneyId = journeyId
+    static member New i m = JourneyException(m,i)
+
+type DuplicateJourneyIdException (journeyId) = 
+    inherit JourneyException("already exists",journeyId)
+
+type NonExistantJourneyException (journeyId) =
+    inherit JourneyException("journey does not exist", journeyId)
+
+type InvalidTransitionException (message,journeyId,transitionId,stateId) =
+    inherit JourneyException(
+        seq { 
+            yield sprintf "%O is not valid from %O" transitionId stateId
+            if System.String.IsNullOrWhiteSpace message then () else
+                yield message }
+            |> String.concat ": "
+        , journeyId)
+    with
+    member __.TransitionId = transitionId
+    member __.StateId = stateId
+    new(journeyId,transitionId,stateId) =
+        InvalidTransitionException ("",journeyId,transitionId,stateId)
 
 module Journey =
 
@@ -38,15 +62,7 @@ module Journey =
         | Transition c -> c.JourneyId
         | ReActivate c -> c.JourneyId
 
-    type JourneyException (message:string, journeyId:JourneyId) = 
-        inherit exn(sprintf "Error for %O: %s" journeyId message)
-        member __.JourneyId = journeyId
-        static member New i m = JourneyException(m,i)
-
-    type DuplicateJourneyIdException (journeyId) = 
-        inherit JourneyException("already exists",journeyId)
-
-    let createJourney (lookupWorkflow:Workflow.VersionedWorkflowId -> Result<Workflow.WorkflowModel,exn>) (command: CreateCommand<'t>) =
+    let createJourney lookupWorkflow (command: CreateCommand<'t>) =
         function
         | NonExistingJourney ->
             lookupWorkflow command.VersionedWorkflowId
@@ -57,9 +73,6 @@ module Journey =
                 |> Ok)
         | _ -> DuplicateJourneyIdException(command.JourneyId) :> exn |> Error
 
-    type NonExistantJourneyException (journeyId) =
-      inherit JourneyException("journey does not exist", journeyId)
-
     let toResult journeyId =
         function
         | NonExistingJourney -> journeyId |> NonExistantJourneyException :> exn |> Error
@@ -68,23 +81,10 @@ module Journey =
 
     let internal bindJourneyState journeyId f = toResult journeyId >> Result.bind f
 
-    type InvalidTransitionException (message,journeyId,transitionId,stateId) =
-        inherit JourneyException(
-            seq { 
-                yield sprintf "%O is not valid from %O" transitionId stateId
-                if System.String.IsNullOrWhiteSpace message then () else
-                    yield message }
-              |> String.concat ": "
-            , journeyId)
-      with
-        member __.TransitionId = transitionId
-        member __.StateId = stateId
-        new(journeyId,transitionId,stateId) = InvalidTransitionException ("",journeyId,transitionId,stateId)
-
-    let transition<'t> (command: TransitionCommand) (workflow:Workflow.WorkflowModel) =
+    let transition<'t> (command: TransitionCommand) (workflow:WorkflowModel) =
         (fun (s:JourneyModel<'t>) ->
             Map.tryFind command.TransitionId workflow.Transitions
-            |> Result.ofOption (Workflow.UndefinedTransitionException(workflow.WorkflowId,command.TransitionId) :> exn)
+            |> Result.ofOption (UndefinedTransitionException(workflow.WorkflowId,command.TransitionId) :> exn)
             |> Result.bind(fun transition ->
                 match s.CurrentState.Away.Contains command.TransitionId with
                   | false ->
@@ -106,7 +106,7 @@ module Journey =
                     } |> Seq.toList |> Ok ))
         |> bindJourneyState command.JourneyId
 
-    let reActivate<'t> (command: TransitionCommand) (workflow:Workflow.WorkflowModel) =
+    let reActivate<'t> (command: TransitionCommand) workflow =
         fun (s:JourneyModel<'t>) ->
             match workflow.TerminalStates.Contains s.CurrentState.Id with
               | false ->
@@ -126,7 +126,7 @@ module Journey =
         | Transition command -> transition command |> bindLookup command.JourneyId
         | ReActivate command -> reActivate command |> bindLookup command.JourneyId
 
-    let evolve<'t> (workflow:Workflow.WorkflowModel) (state:Journey<'t>) (event:JourneyEvent<'t>) =
+    let evolve<'t> (workflow:WorkflowModel) (state:Journey<'t>) (event:JourneyEvent<'t>) =
         let ev =
           function
           | NonExistingJourney, JourneyCreated e ->
@@ -134,6 +134,7 @@ module Journey =
                 Workflow = e.VersionedWorkflowId
                 Subject = e.Subject
                 CurrentState = workflow.InitialState } |> ActiveJourney
+          // only active journeys can transition
           | ActiveJourney s, Transitioned e -> ActiveJourney { s with CurrentState = e.State }
           | ActiveJourney s, Terminated _ -> TerminatedJourney s
           | TerminatedJourney s, ReActivated _ -> ActiveJourney s
