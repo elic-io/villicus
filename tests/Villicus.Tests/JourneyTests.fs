@@ -2,7 +2,7 @@ module JourneyTests
 
 open System
 open Xunit
-open FlowMaster.Domain
+open Villicus.Domain
 open TestUtil
 
 let subject = Guid.NewGuid() :> obj

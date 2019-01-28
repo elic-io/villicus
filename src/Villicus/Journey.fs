@@ -1,4 +1,4 @@
-namespace FlowMaster.Domain
+namespace Villicus.Domain
 
 type JourneyId = JourneyId of System.Guid
 
@@ -30,15 +30,7 @@ and JourneyModel<'t> = {
   with 
     member x.ActiveTransitions = x.CurrentState.To
 
-<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
-<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
 type JourneyException (message, journeyId) = 
-=======
-type JourneyException (message:string, journeyId:JourneyId) = 
->>>>>>> refactor module and namespaces to move types up into namespace and out of modules
-=======
-type JourneyException (message, journeyId) = 
->>>>>>> cleanup type inference on function parameters
     inherit exn(sprintf "Error for %O: %s" journeyId message)
     member __.JourneyId = journeyId
     static member New i m = JourneyException(m,i)
@@ -48,23 +40,6 @@ type DuplicateJourneyIdException (journeyId) =
 
 type NonExistantJourneyException (journeyId) =
     inherit JourneyException("journey does not exist", journeyId)
-<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
-
-type InvalidTransitionException (message,journeyId,transitionId,stateId) =
-    inherit JourneyException(
-        seq { 
-            yield sprintf "%O is not valid from %O" transitionId stateId
-            if System.String.IsNullOrWhiteSpace message then () else
-                yield message }
-            |> String.concat ": "
-        , journeyId)
-    with
-    member __.TransitionId = transitionId
-    member __.StateId = stateId
-    new(journeyId,transitionId,stateId) =
-        InvalidTransitionException ("",journeyId,transitionId,stateId)
-=======
->>>>>>> refactor module and namespaces to move types up into namespace and out of modules
 
 type InvalidTransitionException (message,journeyId,transitionId,stateId) =
     inherit JourneyException(
@@ -87,15 +62,7 @@ module Journey =
         | Transition c -> c.JourneyId
         | ReActivate c -> c.JourneyId
 
-<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
-<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let createJourney lookupWorkflow (command: CreateCommand<'t>) =
-=======
-    let createJourney (lookupWorkflow:VersionedWorkflowId -> Result<WorkflowModel,exn>) (command: CreateCommand<'t>) =
->>>>>>> refactor module and namespaces to move types up into namespace and out of modules
-=======
-    let createJourney lookupWorkflow (command: CreateCommand<'t>) =
->>>>>>> cleanup type inference on function parameters
         function
         | NonExistingJourney ->
             lookupWorkflow command.VersionedWorkflowId
@@ -114,9 +81,6 @@ module Journey =
 
     let internal bindJourneyState journeyId f = toResult journeyId >> Result.bind f
 
-<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
-<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
-=======
     type InvalidTransitionException (message,journeyId,transitionId,stateId) =
         inherit JourneyException(
             seq { 
@@ -130,9 +94,6 @@ module Journey =
         member __.StateId = stateId
         new(journeyId,transitionId,stateId) = InvalidTransitionException ("",journeyId,transitionId,stateId)
 
->>>>>>> refactor module and namespaces to move types up into namespace and out of modules
-=======
->>>>>>> cleanup type inference on function parameters
     let transition<'t> (command: TransitionCommand) (workflow:WorkflowModel) =
         (fun (s:JourneyModel<'t>) ->
             Map.tryFind command.TransitionId workflow.Transitions
@@ -158,15 +119,7 @@ module Journey =
                     } |> Seq.toList |> Ok ))
         |> bindJourneyState command.JourneyId
 
-<<<<<<< 4869de5db97fa87bb493d72531b59a7b28f0c649
-<<<<<<< f406dde39e7ba907a7fe269125bf6103ba2a9b95
     let reActivate<'t> (command: TransitionCommand) workflow =
-=======
-    let reActivate<'t> (command: TransitionCommand) (workflow:WorkflowModel) =
->>>>>>> refactor module and namespaces to move types up into namespace and out of modules
-=======
-    let reActivate<'t> (command: TransitionCommand) workflow =
->>>>>>> cleanup type inference on function parameters
         fun (s:JourneyModel<'t>) ->
             match workflow.TerminalStates.Contains s.CurrentState.Id with
               | false ->
