@@ -1,4 +1,4 @@
-﻿module MemoryStoreTests
+module MemoryStoreTests
 
 open Xunit
 open Villicus.Persistence
