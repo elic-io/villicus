@@ -29,8 +29,8 @@ let createAgentFixture () =
 
 let processResult checkModel = function
     | Ok wf -> 
-        wf |> (Option.inject checkModel)
-        |> ignore |> Async.result
+    wf |> (Option.inject checkModel)
+    |> ignore |> Async.result
     | Error e -> raise e
 let wrapCommand checkFunc command =
     command
