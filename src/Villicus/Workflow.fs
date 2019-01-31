@@ -33,6 +33,7 @@ type Version =
 type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
 type WorkflowEvent =
 | WorkflowCreated of WorkflowNamedEvent
+| WorkflowRenamed of WorkflowNamedEvent
 | WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
 | WorkflowCopied of WorkflowCopiedEvent
 | WorkflowPublished of VersionedWorkflowEvent
@@ -99,6 +100,7 @@ type EditTransitionCommand (workflowId, transitionId, transitionName, initialSta
 
 type WorkflowCommand =
 | CreateWorkflow of CreateWorkflowCommand
+| RenameWorkflow of CreateWorkflowCommand
 | CopyWorkflow of CopyWorkflowCommand
 | PublishWorkflow of WorkflowId
 | RePublishWorkflow of VersionedWorkflowId 
@@ -248,6 +250,7 @@ module Workflow =
 
     let workflowId = function
         | CreateWorkflow c -> c.WorkflowId
+        | RenameWorkflow c -> c.WorkflowId
         | CopyWorkflow c -> c.Target
         | PublishWorkflow c -> c
         | RePublishWorkflow c -> c.Id
@@ -353,6 +356,14 @@ module Workflow =
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
+    let renameWorkflow (command: CreateWorkflowCommand) state =
+        (fun s ->
+            match s.Name = command.Name with
+            | true -> []
+            | false -> [ WorkflowRenamed { WorkflowId = command.WorkflowId; Name = command.Name } ]
+            |> Ok)
+        |> bindExists command.WorkflowId
+
     let copyWorkflow (command: CopyWorkflowCommand) =            
         fun (model:WorkflowModel) -> 
             [ [ WorkflowCopied { WorkflowId = command.Source.Id; Version = command.Source.Version; Target = command.Target }
@@ -409,13 +420,26 @@ module Workflow =
               | false -> Ok [])
         |> bindExists command.Id
 
+    let inline internal tryPickResult< ^a,^b when ^a:comparison > 
+      (f: ^a -> ^b -> ^b option) (aMap:Map< ^a,^b>) createErr x = 
+        Map.tryPick f aMap
+        |> function
+            | Some t -> t |> createErr :> exn |> Error
+            | None -> Ok x
+
     let addState (command: AddStateCommand) =
         fun s ->
             nextStateId s.WorkflowId s
-            |> Result.map (fun n ->
-                [ { WorkflowId = command.WorkflowId
+            |> Result.bind (fun n ->
+                let stateEvent =
+                  { WorkflowId = command.WorkflowId
                     StateId = n
-                    StateName = command.StateName } |> StateAdded ])
+                    StateName = command.StateName }
+                [ StateAdded stateEvent ]
+                |> tryPickResult<StateId,State>
+                        (fun _ v -> match v.Name = stateEvent.StateName with | true -> Some v | false -> None)
+                        s.States
+                        (fun st -> DuplicateStateNameException(stateEvent.WorkflowId,st.Name) :> exn))
         |> bindExists command.WorkflowId
 
     let inline internal ifStateExists stateId x state =
@@ -459,18 +483,13 @@ module Workflow =
         |> bindExists command.WorkflowId
 
     let internal transitionCheck workflowModel transEvent x =
-        let tryPick f transitionMap createErr x = 
-            Map.tryPick f transitionMap
-            |> function
-                | Some t -> t |> createErr :> exn |> Error
-                | None -> Ok x
         let transitionNameExists _ (v:Transition) =
             match v.Name = transEvent.TransitionName with | true -> Some v | false -> None
         let transitionPathExists _ (v:Transition) =
             match v.SourceState = transEvent.SourceState && v.TargetState = transEvent.TargetState with | true -> Some v | false -> None
         x
-        |> tryPick transitionNameExists workflowModel.Transitions (fun t -> DuplicateTransitionNameException(transEvent.WorkflowId,t))
-        |> Result.bind (tryPick transitionPathExists workflowModel.Transitions (fun t -> DuplicateTransitionException(transEvent.WorkflowId,t)))
+        |> tryPickResult<TransitionId,Transition> transitionNameExists workflowModel.Transitions (fun t -> DuplicateTransitionNameException(transEvent.WorkflowId,t) :> exn)
+        |> Result.bind (tryPickResult<TransitionId,Transition> transitionPathExists workflowModel.Transitions (fun t -> DuplicateTransitionException(transEvent.WorkflowId,t) :> exn))
         |> Result.bind (fun y -> ifStateExists transEvent.SourceState y workflowModel)
         |> Result.bind (fun y -> ifStateExists transEvent.TargetState y workflowModel)
 
@@ -573,6 +592,7 @@ module Workflow =
           | None, WorkflowCreated e -> createNew e.WorkflowId e.Name |> Some
           | None, _ -> None
           | Some _, WorkflowCreated _ -> None
+          | Some s, WorkflowRenamed e ->Some { s with Name = e.Name }
           | Some s, WorkflowCreatedAsCopy e ->
             { s with
                 WorkflowId = e.WorkflowId 
