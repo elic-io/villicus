@@ -178,6 +178,17 @@ let ``add state`` () =
     |> ignore
 
 [<Fact>]
+let ``add state with same name as existing`` () =
+    fun () ->
+        testWorkflow
+        |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
+        |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
+        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+        |> Result.mapError(fun e -> raise e)
+        |> ignore
+    |> expectExn<DuplicateStateNameException>
+
+[<Fact>]
 let ``rename state`` () =
     testWorkflow
     |> processCmd (RenameState (EditStateCommand(newWorkflowId,0u,"Renamed Initial State")))

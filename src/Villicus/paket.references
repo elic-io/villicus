@@ -1,1 +1,4 @@
 FSharp.Core
+Newtonsoft.Json
+# Microsoft.Extensions.Caching.Memory
+System.Reactive

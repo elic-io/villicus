@@ -1,16 +1,16 @@
 type project
 title
-    FlowMaster
+    Villicus
 owners
     Jon Roberts
 authors 
     Jon Roberts
 projectUrl
-    https://github.com/elic-io/flowmaster
+    https://github.com/elic-io/villicus
 iconUrl
-    https://raw.githubusercontent.com/elic-io/flowmaster/master/docs/files/img/logo.png
+    https://raw.githubusercontent.com/elic-io/villicus/master/docs/files/img/logo.png
 licenseUrl
-    https://github.com/elic-io/flowmaster/blob/master/LICENSE.txt
+    https://github.com/elic-io/villicus/blob/master/LICENSE.txt
 requireLicenseAcceptance
     false
 copyright
