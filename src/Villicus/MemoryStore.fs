@@ -4,21 +4,23 @@ open System.Collections.Concurrent
 
 module MemoryStore =
     
-    /// This will go through the full eventList every time it's called
+    /// MemoryStore.StreamReader will internally go through the full eventList every time it's called
+    /// It's inefficient
+    /// It also only supports int32 event addresses
+    /// But that's OK it's really just a mock/sample implementation for testing and development
     let readStream (store:ConcurrentDictionary<'a,'b list>) streamId version count =
-        let rec skip64 i64 li =
-            let maxInt = System.Int32.MaxValue |> int64
-            if i64 < maxInt then
-                List.skip (int i64) li
-            else
-                List.skip System.Int32.MaxValue li
-                |> skip64 i64
-        let takeUpTo mx = match mx with | 0 -> id | _ -> List.takeWhile(fun (i,_) -> i < mx)
+        let takeUpTo mx = 
+            match mx with 
+            | 0 -> id 
+            | _ -> List.indexed >> List.takeWhile(fun (i,_) -> i < mx) >> List.map snd
         match store.TryGetValue streamId with
         | false, _ -> (List.empty<'b>, 0L, None) |> Async.result
         | true, value ->
-            //|> skip64 version
-            let stream = value |> List.indexed |> List.skip (int version)
+            let stream =
+                value |> List.indexed |>
+                match version with
+                | 0L -> id
+                | _ -> List.skip (version - 1L |> int)
             let iEvents = stream |> takeUpTo count
             let events = iEvents |> List.map snd
             let lastEventNumber = iEvents |> List.last |> fst |> (+) 1
