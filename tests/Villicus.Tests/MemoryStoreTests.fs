@@ -16,7 +16,7 @@ and Complex = {
     Hare: Map<int,string> }
 
 let testStore = MemoryStore.create<TestId,TestEvent> ()
-let testId = System.Guid.NewGuid () |> TestId
+let getTestId () = System.Guid.NewGuid () |> TestId
 
 [<Fact>]
 let ``unsaved stream yields empty event list`` () =
@@ -28,6 +28,7 @@ let ``unsaved stream yields empty event list`` () =
 
 [<Fact>]
 let ``version mismatch`` () =
+    let testId = getTestId ()
     async {
         let! result = [ Turtle ] |> Seq.ofList |> testStore.StreamWriter testId 1L
         fun () -> result |> Result.mapError(fun e -> raise e) |> ignore
@@ -35,6 +36,7 @@ let ``version mismatch`` () =
 
 [<Fact>]
 let ``write, append, and read back events`` () =
+    let testId = getTestId ()
     let expectedVersion = 0L
     let inputEvents =
         [ Turtle
@@ -55,7 +57,7 @@ let ``write, append, and read back events`` () =
           | Error e -> raise e
           | Ok () ->
             // only read back the three events we just appended
-            let! endList,endVersion,endNextVersion = testStore.StreamReader testId 3L 1000
+            let! endList,endVersion,endNextVersion = testStore.StreamReader testId 4L 1000
             Assert.Equal(3,List.length endList)
             Assert.Equal(None,endNextVersion)
             Assert.Equal(6L,endVersion)
