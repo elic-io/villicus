@@ -17,14 +17,6 @@ module Observable =
                     System.Diagnostics.Debug.Write(ex)
                     sub.OnError(ex))
 
-        let inline publishError msg =
-            !subscribers 
-            |> Seq.iter (fun (KeyValue(_, sub)) ->
-                try
-                        sub.OnError(msg)
-                with ex -> 
-                    System.Diagnostics.Debug.Write(ex))
-
         let completed() = 
             lock subscribers (fun () ->
             finished := true
@@ -40,9 +32,7 @@ module Observable =
                     async {
                         while true do
                             let! msg = inbox.Receive()
-                            match msg with
-                              | Ok m -> publish m
-                              | Error e -> publishError e} ),
+                            publish msg } ),
                     token)
         let obs = 
             { new IObservable<'T> with 

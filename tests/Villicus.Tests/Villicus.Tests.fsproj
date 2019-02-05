@@ -13,6 +13,7 @@
     <Compile Include="WorkflowTests.fs" />
     <Compile Include="JourneyTests.fs" />
     <Compile Include="CommandHandlerTests.fs" />
+    <Compile Include="MemoryRepositoryTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

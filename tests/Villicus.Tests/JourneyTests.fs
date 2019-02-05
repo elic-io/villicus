@@ -5,7 +5,7 @@ open Xunit
 open Villicus.Domain
 open TestUtil
 
-let subject = Guid.NewGuid() :> obj
+let subject = Guid.NewGuid()
 let newJourneyId = Guid.NewGuid() |> JourneyId
 let testWorkflow =
     WorkflowTests.testWorkflow
@@ -28,7 +28,7 @@ let createTest (workflow:Result<WorkflowModel,exn>) =
             JourneyId = newJourneyId
             VersionedWorkflowId = wf.VersionedWorkflowId
             Subject = subject }
-        Journey.createJourney lookup createCmd NonExistingJourney)
+        Journey.createJourney lookup createCmd Journey.NewNonExisting)
 
 [<Fact>]
 let ``create journey`` () =
@@ -38,8 +38,8 @@ let ``create journey`` () =
             JourneyId = newJourneyId
             VersionedWorkflowId = wf.VersionedWorkflowId
             Subject = subject }
-        Journey.createJourney lookup createCmd NonExistingJourney
-        |> Result.map(List.fold (Journey.evolve wf) NonExistingJourney)
+        Journey.createJourney lookup createCmd Journey.NewNonExisting
+        |> Result.map(List.fold (Journey.evolve wf) Journey.NewNonExisting)
         |> Result.bind (Journey.toResult newJourneyId)
         |> Result.map(fun j -> 
             Assert.Equal(subject,j.Subject)
@@ -58,7 +58,7 @@ let ``create journey fails when lookup fails`` () =
                 JourneyId = newJourneyId
                 VersionedWorkflowId = { wf.VersionedWorkflowId with Version = Version 77777UL }
                 Subject = subject }
-            Journey.createJourney lookup createCmd NonExistingJourney)
+            Journey.createJourney lookup createCmd Journey.NewNonExisting)
         |> Result.injectError(fun e -> raise e)
         |> ignore
     |> expectExn<UndefinedVersionException>
@@ -68,7 +68,7 @@ let testJourney =
     testWorkflow
     |> Result.bind(fun wf ->
         createTest testWorkflow
-        |> Result.map(List.fold (Journey.evolve wf) NonExistingJourney))
+        |> Result.map(List.fold (Journey.evolve wf) Journey.NewNonExisting))
 
 let handleEvolve command state =
     testWorkflow
@@ -86,7 +86,7 @@ let ``transition`` () =
     |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 0u })
     |> Result.bind(fun j ->
         match j with
-          | NonExistingJourney -> "Journey doesn't exist" |> exn |> Error
+          | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> Error
           | ActiveJourney _ -> "Journey is Active" |> exn |> Error
           | TerminatedJourney t -> t |> Ok)
     |> Result.map(fun jm ->
@@ -120,7 +120,7 @@ let ``reactivate`` () =
     |> processCmd (ReActivate { JourneyId = newJourneyId; TransitionId = 1u })
     |> Result.bind(fun j ->
         match j with
-          | NonExistingJourney -> "Journey doesn't exist" |> exn |> Error
+          | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> Error
           | ActiveJourney a -> a |> Ok 
           | TerminatedJourney _ -> "Journey is Terminated" |> exn |> Error)
     |> Result.map(fun jm ->

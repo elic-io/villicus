@@ -15,12 +15,12 @@ and Complex = {
     A:System.Guid
     Hare: Map<int,string> }
 
-let testStore = MemoryStore.create<TestId,TestEvent> ()
+let testStore = MemoryEventStore.create<TestId,TestEvent> ()
 let getTestId () = System.Guid.NewGuid () |> TestId
 
 [<Fact>]
 let ``unsaved stream yields empty event list`` () =
-    testStore.StreamReader (System.Guid.Empty |> TestId) 0L 1000
+    testStore.ReadStream (System.Guid.Empty |> TestId) 0L 1000
     |> Async.map(fun (readList,version,nextVersion) ->
             Assert.True(List.isEmpty readList)
             Assert.Equal(None,nextVersion)
@@ -30,7 +30,7 @@ let ``unsaved stream yields empty event list`` () =
 let ``version mismatch`` () =
     let testId = getTestId ()
     async {
-        let! result = [ Turtle ] |> Seq.ofList |> testStore.StreamWriter testId 1L
+        let! result = [ Turtle ] |> Seq.ofList |> testStore.AppendToStream testId 1L
         fun () -> result |> Result.mapError(fun e -> raise e) |> ignore
         |> expectExn<VersionMisMatchException> }
 
@@ -43,21 +43,21 @@ let ``write, append, and read back events`` () =
           Complex { A = System.Guid.NewGuid (); Hare = Map.empty<int,string> }
           Simple 573 ]
     async {
-        match! inputEvents |> Seq.ofList |> testStore.StreamWriter testId expectedVersion with
+        match! inputEvents |> Seq.ofList |> testStore.AppendToStream testId expectedVersion with
         | Error e -> raise e
         | Ok () ->
-          let! readList,version,nextVersion = testStore.StreamReader testId 0L 1000
+          let! readList,version,nextVersion = testStore.ReadStream testId 0L 1000
           Assert.Equal(3,List.length readList)
           Assert.Equal(None,nextVersion)
           Assert.Equal(3L,version)
           readList |> List.zip inputEvents
           |> List.iter (fun (a,b) -> Assert.Equal(a,b))
           let appendEvents = [ Turtle; Turtle; Turtle ]
-          match! appendEvents |> Seq.ofList |> testStore.StreamWriter testId 3L with
+          match! appendEvents |> Seq.ofList |> testStore.AppendToStream testId 3L with
           | Error e -> raise e
           | Ok () ->
             // only read back the three events we just appended
-            let! endList,endVersion,endNextVersion = testStore.StreamReader testId 4L 1000
+            let! endList,endVersion,endNextVersion = testStore.ReadStream testId 4L 1000
             Assert.Equal(3,List.length endList)
             Assert.Equal(None,endNextVersion)
             Assert.Equal(6L,endVersion)
@@ -65,7 +65,7 @@ let ``write, append, and read back events`` () =
             |> List.iter (fun (a,b) -> Assert.Equal(a,b))
             // now read back all events
             let expectedAllEvents = inputEvents @ appendEvents
-            let! allList,allVersion,allNextVersion = testStore.StreamReader testId 0L 1000
+            let! allList,allVersion,allNextVersion = testStore.ReadStream testId 0L 1000
             Assert.Equal(6,List.length allList)
             Assert.Equal(None,allNextVersion)
             Assert.Equal(6L,allVersion)

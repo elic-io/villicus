@@ -2,7 +2,7 @@
 
 open System.Collections.Concurrent
 
-module MemoryStore =
+module MemoryEventStore =
     
     /// MemoryStore.StreamReader will internally go through the full eventList every time it's called
     /// It's inefficient
@@ -52,7 +52,7 @@ module MemoryStore =
             | e -> Error e
         |> Async.result
 
-    let create<'a,'b> () = 
+    let create<'a,'b> () =
         let store = ConcurrentDictionary<'a,'b list> ()
-        { StreamReader = readStream store
-          StreamWriter = appendToStream store }
+        { ReadStream = readStream store
+          AppendToStream = appendToStream store }
