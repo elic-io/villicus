@@ -29,19 +29,20 @@ let createAgentFixture () =
 
 let processResult checkModel = function
     | Ok (_,wf) -> 
-    wf |> (Option.inject checkModel)
-    |> ignore
-    | Error e -> raise e
+        wf |> (Option.inject checkModel)
+        |> ignore
+    | Error _ -> ()
 
 let resultCmd r cmd = ResultCommand.New r cmd |> ResultCommand
 
-let postAndReply (agent:WorkflowAgent) cmd = agent.PostAndReply(fun r -> resultCmd r cmd)
-
+let postAndReply (agent:WorkflowAgent) cmd = 
+    agent.PostAndReply(fun r -> resultCmd r cmd)
+    |> Result.injectError (fun e -> raise e)
 
 let workflowCreation agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
     CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
     |> postAndReply agent
-    |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))    
+    |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))
     cts.Cancel() // stops sending events to observers
 
 [<Fact>]
@@ -136,7 +137,9 @@ let createJourneyFixture<'a> workflow =
       Workflow = workflow
       Agent = Journey.start dataStore (fun () -> workflow) broadcastSA guid }
 
-let postAndReplyJ<'a> (agent:JourneyAgent<'a>) cmd = agent.PostAndReply(fun r -> ResultCommand.New r cmd)
+let postAndReplyJ<'a> (agent:JourneyAgent<'a>) cmd = 
+    agent.PostAndReply(fun r -> ResultCommand.New r cmd)
+    |> Result.injectError(fun e -> raise e)
 
 let processResultJ (checkModel:JourneyModel<'a> -> unit) = function
     | Ok (_,j) -> 
@@ -145,11 +148,10 @@ let processResultJ (checkModel:JourneyModel<'a> -> unit) = function
         | NonExistingJourney _ -> raise (exn "journey does not exist")
     | Error e -> raise e
 
-
 let journeyCreation agent (cts:System.Threading.CancellationTokenSource) journeyId versionedWorkflowId subject =
     { JourneyId = journeyId; VersionedWorkflowId = versionedWorkflowId; Subject = subject } |> CreateJourney
     |> postAndReplyJ agent
-    |> processResultJ (fun jm -> Assert.Equal(0u,jm.CurrentState.Id))    
+    |> processResultJ (fun jm -> Assert.Equal(0u,jm.CurrentState.Id))
     cts.Cancel() // stops sending events to observers
 
 [<Fact>]
@@ -161,7 +163,9 @@ let ``agent journey creation`` () =
     af.Agent.PostAndReply(fun r -> GetState (af.WorkflowId,0L,r))
     |> processResult (fun wfm -> 
         let jf = wfm |> Published |> createJourneyFixture<System.Guid>
-        System.Guid.NewGuid () |> journeyCreation jf.Agent jf.CTS jf.JourneyId wfm.VersionedWorkflowId)
+        System.Guid.NewGuid () 
+        |> journeyCreation jf.Agent jf.CTS jf.JourneyId wfm.VersionedWorkflowId)
+    |> ignore
 
 [<Fact>]
 let ``dispatcher journey creation`` () =
@@ -173,16 +177,26 @@ let ``dispatcher journey creation`` () =
         let d = MemoryEventStore.create<string,WorkflowEvent> () |> Workflow.createDispatcher 0
         Workflow.versionProjection d repo.Save
         d
-    let jDispatcher = 
+    let jDispatcher =
         let es = MemoryEventStore.create<string,JourneyEvent<System.Guid>> ()
         Journey.createDispatcher 0 es repo
+    // we add an second observer to trigger the journey creation after the publish
+    wfDispatcher.Observable
+    |> Observable.add(function
+        | WorkflowPublished e -> 
+            wfDispatcher.Agent.PostAndReply(fun r -> GetVersionedState (e,r))
+            |> Result.map(snd >> Option.map(fun wfm ->
+                System.Guid.NewGuid () //subject
+                |> journeyCreation jDispatcher.Agent jDispatcher.CancellationTokenSource journeyId wfm.VersionedWorkflowId))
+            |> ignore
+        | _ -> ())
+
     CreateWorkflowCommand (workflowId, wfName) |> CreateWorkflow
-    |> postAndReply wfDispatcher.Agent |> ignore
-    workflowId |> PublishWorkflow |> postAndReply wfDispatcher.Agent |> ignore
-    wfDispatcher.Agent.PostAndReply(fun r -> GetState (workflowId,0L,r))
-    |> processResult (fun wfm ->
-        System.Guid.NewGuid () //subject
-        |> journeyCreation jDispatcher.Agent jDispatcher.CancellationTokenSource journeyId wfm.VersionedWorkflowId
-        |> ignore)
+    |> postAndReply wfDispatcher.Agent 
+    |> Result.injectError(fun e -> raise e)
+    |> ignore
+    workflowId |> PublishWorkflow
+    |> postAndReply wfDispatcher.Agent
+    |> Result.injectError(fun e -> raise e)
     |> ignore
 

@@ -74,12 +74,17 @@ let ``write, append, and read back events`` () =
 
 [<Fact>]
 let ``read list larger than buffer`` () =
-    raise (NotImplementedException())
-
-[<Fact>]
-let ``write and read multiple streams at once`` () =
-    raise (NotImplementedException())
-
-[<Fact>]
-let ``dispatcher tests`` () =
-    raise (NotImplementedException())
+    let testId = getTestId ()
+    let inputEvents =
+        [ Turtle
+          Complex { A = System.Guid.NewGuid (); Hare = Map.empty<int,string> }
+          Simple 573 ]
+    async {
+        match! inputEvents |> Seq.ofList |> testStore.AppendToStream testId 0L with
+        | Error e -> raise e
+        | Ok () ->
+          let! readList,version,nextVersion = testStore.ReadStream testId 0L 2
+          Assert.Equal(2,List.length readList)
+          Assert.Equal(Some 3L,nextVersion)
+          Assert.Equal(2L,version)
+        return () }

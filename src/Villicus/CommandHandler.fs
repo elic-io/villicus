@@ -180,7 +180,7 @@ module Workflow =
           CancellationTokenSource = cts }
 
     let versionProjection dispatcher save =
-        dispatcher.Observable 
+        dispatcher.Observable
         |> Observable.add(function
             | WorkflowPublished e -> Some (e,Published)
             | WorkflowWithdrawn e -> Some (e,Withdrawn)
@@ -224,7 +224,6 @@ module Journey =
         Agent.Start<| fun inbox ->
             let rec loop (version,state) = async {
                 let evolve = workflow >> Journey.evolve<'a>
-                return! loop (version,state)
                 let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>) = inbox.Receive()
                 let eventResult = Journey.handle<'a> (fun _ -> workflow () |> Ok) command.Command state
                 match eventResult with
