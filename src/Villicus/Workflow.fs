@@ -233,6 +233,7 @@ module Workflow =
 
     let eWorkflowId = function
         | WorkflowCreated e -> e.WorkflowId
+        | WorkflowRenamed e -> e.WorkflowId
         | WorkflowCreatedAsCopy e -> e.WorkflowId
         | WorkflowCopied e -> e.WorkflowId
         | WorkflowPublished e -> e.Id
@@ -356,7 +357,7 @@ module Workflow =
         Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
         >> Result.bind f
     
-    let renameWorkflow (command: CreateWorkflowCommand) state =
+    let renameWorkflow (command: CreateWorkflowCommand) =
         (fun s ->
             match s.Name = command.Name with
             | true -> []
@@ -532,6 +533,7 @@ module Workflow =
     let handle = 
         function
         | CreateWorkflow command -> createWorkflow command
+        | RenameWorkflow command -> renameWorkflow command
         | CopyWorkflow command -> copyWorkflow command
         | PublishWorkflow command -> publishWorkflow command
         | RePublishWorkflow command -> rePublishWorkflow command
