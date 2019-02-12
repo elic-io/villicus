@@ -83,7 +83,7 @@ let processCmd command = handleEvolve command |> Result.bind
 [<Fact>]
 let ``transition`` () =
     testJourney
-    |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 0u })
+    |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 0u })
     |> Result.bind(fun j ->
         match j with
           | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> Error
@@ -99,7 +99,7 @@ let ``transition`` () =
 let ``invalid transition that doesn't exist`` () =
     fun () ->
         testJourney
-        |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 57463u })
+        |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 57463u })
         |> Result.injectError(fun e -> raise e)
         |> ignore
     |> expectExn<UndefinedTransitionException>
@@ -108,7 +108,7 @@ let ``invalid transition that doesn't exist`` () =
 let ``invalid transition`` () =
     fun () ->
         testJourney
-        |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 1u })
+        |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 1u })
         |> Result.injectError(fun e -> raise e)
         |> ignore
     |> expectExn<InvalidTransitionException>
@@ -116,7 +116,7 @@ let ``invalid transition`` () =
 [<Fact>]
 let ``reactivate`` () =
     testJourney
-    |> processCmd (Transition { JourneyId = newJourneyId; TransitionId = 0u })
+    |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 0u })
     |> processCmd (ReActivate { JourneyId = newJourneyId; TransitionId = 1u })
     |> Result.bind(fun j ->
         match j with

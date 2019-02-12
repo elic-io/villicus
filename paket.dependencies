@@ -1,8 +1,12 @@
+generate_load_scripts: true
 source https://nuget.org/api/v2
 
 nuget FSharp.Core ~> 4.5.0 redirects: force
 nuget Newtonsoft.Json
+nuget suave
 nuget System.Reactive
+nuget Thoth.Json
+nuget Thoth.Json.Net
 # nuget Microsoft.Extensions.Caching.Memory
 github haf/YoLo Yolo.fs
 
@@ -17,3 +21,4 @@ group Test
   source https://nuget.org/api/v2
   
   nuget xunit
+
