@@ -94,6 +94,17 @@ let main argv =
         | None -> defaultVal
         |> fun x -> System.Math.Max(minVal,System.Math.Min(x,maxVal))
 
+    let pageLinkheader options pgSize pgSize offSt rel =
+        let b = System.UriBuilder(ctx.request.url)
+        b.Host <- ctx.request.clientHost true []
+        b.Query <-
+          options |> Map.add "offset" (string offSt)
+          |> Map.add "pagesize" (string pgSize)
+          |> Map.toArray |> Array.map (fun (k,v) -> sprintf "%s=%s" k v)
+          |> Array.toSeq |> String.concat "&"
+        let uri = b.Uri.ToString()
+        sprintf "<%s>; rel=%s" uri rel
+        |> Writers.addHeader "Link"
 
     let getEvents wfidStr : WebPart =
         fun (ctx:HttpContext) ->
@@ -115,28 +126,18 @@ let main argv =
                         | _ -> 
                             (eventList |> List.map WorkflowEvent.Encoder |> Encode.list
                             |> Encode.toString 4 |> Successful.OK >=> (
-                                let linkheader offSt pgSize rel =
-                                    let b = System.UriBuilder(ctx.request.url)
-                                    b.Host <- ctx.request.clientHost true []
-                                    b.Query <-
-                                      options |> Map.add "offset" (string offSt)
-                                      |> Map.add "pagesize" (string pgSize)
-                                      |> Map.toArray |> Array.map (fun (k,v) -> sprintf "%s=%s" k v)
-                                      |> Array.toSeq |> String.concat "&"
-                                    let uri = b.Uri.ToString()
-                                    sprintf "<%s>; rel=%s" uri rel
-                                    |> Writers.addHeader "Link"
+                                let linkheader = pageLinkheader options pageSize
                                 match eventIndex,nextEventId with
                                 | 0L,None -> fun (c:HttpContext) -> c |> Some |> Async.result // no pages needed, no headers
                                 | 0L,Some nextId | _,Some nextId ->
                                     let priorId = System.Math.Max(0L,eventIndex - (int64 pageSize))
-                                    linkheader 0L pageSize "first" >=>
-                                    linkheader priorId pageSize "prev" >=>
-                                    linkheader nextId pageSize "next"
+                                    linkheader 0L "first" >=>
+                                    linkheader priorId "prev" >=>
+                                    linkheader nextId "next"
                                 | _,None -> 
                                     let priorId = System.Math.Max(0L,eventIndex - (int64 pageSize))
-                                    linkheader 0L pageSize "first" >=>
-                                    linkheader priorId pageSize "prev")) ctx
+                                    linkheader 0L "first" >=>
+                                    linkheader priorId "prev")) ctx
                     | Error error -> 
                         (errorContent >=> ServerErrors.INTERNAL_ERROR error.Message) ctx)            
             | _ -> (wfidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST >=> errorContent) ctx
