@@ -256,7 +256,7 @@ let ``state that can't reach terminal makes workflow invalid`` () =
 [<Fact>]
 let ``workflow without terminal states is invalid`` () =
     testWorkflow
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; State = 1u } )
+    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u } )
     |> function
       | Ok model ->
         model 
@@ -322,7 +322,7 @@ let ``copy Workflow`` () =
 [<Fact>]
 let ``drop state`` () =
     testWorkflow
-    |> processCmd (DropState { WorkflowId = newWorkflowId; State = 1u })
+    |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 1u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun s ->
         Assert.Equal(1,s.States.Count))
@@ -333,7 +333,7 @@ let ``drop state`` () =
 let ``can't drop initial state`` () =
     fun () ->
         testWorkflow
-        |> processCmd (DropState { WorkflowId = newWorkflowId; State = 0u })
+        |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 0u })
         |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
         |> Result.mapError(fun e -> raise e)
         |> ignore
@@ -343,7 +343,7 @@ let ``can't drop initial state`` () =
 let ``can't drop nonexistant state`` () =
     fun () ->
         testWorkflow
-        |> processCmd (DropState { WorkflowId = newWorkflowId; State = 2u })
+        |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 2u })
         |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
         |> Result.mapError(fun e -> raise e)
         |> ignore
@@ -353,7 +353,7 @@ let ``can't drop nonexistant state`` () =
 let ``set terminal state`` () =
     testWorkflow
     |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; State = 2u })
+    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun s ->
         let newTerminal = s.States |> Map.find 2u
@@ -366,8 +366,8 @@ let ``set terminal state`` () =
 let ``set terminal state that is already terminal generates no events`` () =
     testWorkflow
     |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; State = 2u })
-    |> Result.bind(Workflow.handle (SetTerminalState { WorkflowId = newWorkflowId; State = 2u }))
+    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
+    |> Result.bind(Workflow.handle (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u }))
     |> Result.map(List.isEmpty >> Assert.True)
     |> Result.mapError(fun e -> raise e)
     |> ignore
@@ -376,7 +376,7 @@ let ``set terminal state that is already terminal generates no events`` () =
 let ``Setting terminal state that doesn't exist`` () =
     fun () ->
         testWorkflow
-        |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; State = 2u })
+        |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
         |> Result.mapError(fun e -> raise e)
         |> ignore
     |> expectExn<UndefinedStateException>
@@ -385,8 +385,8 @@ let ``Setting terminal state that doesn't exist`` () =
 let ``unset terminal state`` () =
     testWorkflow
     |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; State = 2u })
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; State = 2u })
+    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
+    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun s ->
         Assert.False(s.TerminalStates.Contains 2u)
@@ -397,8 +397,8 @@ let ``unset terminal state`` () =
 [<Fact>]
 let ``unset terminal state that is not terminal generates no events`` () =
     testWorkflow
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; State = 1u })
-    |> Result.bind(Workflow.handle (UnSetTerminalState { WorkflowId = newWorkflowId; State = 1u }))
+    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u })
+    |> Result.bind(Workflow.handle (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u }))
     |> Result.map(List.isEmpty >> Assert.True)
     |> Result.mapError(fun e -> raise e)
     |> ignore
@@ -407,7 +407,7 @@ let ``unset terminal state that is not terminal generates no events`` () =
 let ``unsetting terminal state that doesn't exist`` () =
     fun () ->
         testWorkflow
-        |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; State = 2u })
+        |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
         |> Result.mapError(fun e -> raise e)
         |> ignore
     |> expectExn<UndefinedStateException>
@@ -556,7 +556,7 @@ let ``edit transition to nonexistant target state`` () =
 [<Fact>]
 let ``drop transition`` () =
     testWorkflow
-    |> processCmd (DropTransition { WorkflowId = newWorkflowId; Transition = 0u })
+    |> processCmd (DropTransition { WorkflowId = newWorkflowId; TransitionId = 0u })
     |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
     |> Result.map(fun m -> Assert.Equal(0,m.Transitions.Count))
     |> Result.mapError(fun e -> raise e)
@@ -566,7 +566,7 @@ let ``drop transition`` () =
 let ``drop transition that doesn't exist`` () =
     fun () ->
         testWorkflow
-        |> processCmd (DropTransition { WorkflowId = newWorkflowId; Transition = 1u })
+        |> processCmd (DropTransition { WorkflowId = newWorkflowId; TransitionId = 1u })
         |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
         |> Result.mapError(fun e -> raise e)
         |> ignore

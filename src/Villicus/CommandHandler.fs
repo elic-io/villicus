@@ -25,11 +25,20 @@ type ResultCommand<'command,'state,'error> = {
         Command = command
         ReplyChannel = replyChannel }
 
+type ResultCommandStream<'command,'event,'error> = {
+    Command: 'command
+    ReplyChannel: AsyncReplyChannel<Result<int64 * 'event list,'error>> }
+  with
+    static member New replyChannel command = {
+        Command = command
+        ReplyChannel = replyChannel }
+
 type WFCommand<'command,'event,'aggregateId,'state,'error> =
 | GetState of aggregateId:'aggregateId * version:System.Int64 * replyChannel:AsyncReplyChannel<Result<'state,'error>>
 | GetVersionedState of versionedWorkflowId:VersionedWorkflowId * replyChannel:AsyncReplyChannel<Result<'state,'error>>
 | ReadStream of ReadStream<'aggregateId,'event,'error>
 | ResultCommand of ResultCommand<'command,'state,'error>
+| ResultCommandStream of ResultCommandStream<'command,'event,'error>
 
 type VersionType =
 | WorkflowVersion of Version
@@ -67,6 +76,7 @@ module Workflow =
         | GetVersionedState (vw,_) -> vw.Id
         | ReadStream rs -> rs.AggregateId
         | ResultCommand p -> Workflow.workflowId p.Command
+        | ResultCommandStream p -> Workflow.workflowId p.Command
 
     let streamIdString (workflowId:System.Guid) = sprintf "Workflow-%O" workflowId
 
@@ -141,9 +151,28 @@ module Workflow =
                         match! save eventStore.AppendToStream workflowId version events with
                             | Ok (_:unit) ->
                                 let newState = Seq.fold Workflow.evolve state events
-                                (version,newState) |> Ok |> command.ReplyChannel.Reply
+                                let newVersion = version + (Seq.length events |> int64)
+                                (newVersion,newState) |> Ok |> command.ReplyChannel.Reply
                                 events |> Seq.iter sendToObservers
-                                return! loop ((version + (Seq.length events |> int64)), newState)
+                                return! loop (newVersion, newState)
+                            | Error e ->
+                                e |> Error |> command.ReplyChannel.Reply
+                                return! loop (version,state)
+                    | Error e -> 
+                        e |> Error |> command.ReplyChannel.Reply
+                        return! loop (version,state)
+                | ResultCommandStream command ->
+                    let eventResult = Workflow.handle command.Command state
+                    match eventResult with
+                    | Ok eList ->
+                        let events = eList |> Seq.ofList
+                        match! save eventStore.AppendToStream workflowId version events with
+                            | Ok (_:unit) ->
+                                let newState = Seq.fold Workflow.evolve state events
+                                let newVersion = version + (Seq.length events |> int64)
+                                (newVersion,eList) |> Ok |> command.ReplyChannel.Reply
+                                events |> Seq.iter sendToObservers
+                                return! loop (newVersion, newState)
                             | Error e ->
                                 e |> Error |> command.ReplyChannel.Reply
                                 return! loop (version,state)
@@ -255,7 +284,7 @@ module Journey =
             Agent.Start
             <| fun inbox ->
                 let rec loop aggregates = async {
-                    let! command = inbox.Receive()
+                    let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>) = inbox.Receive()
                     let id = Journey.journeyId command.Command
                     match Map.tryFind id aggregates with
                     | Some aggregate ->

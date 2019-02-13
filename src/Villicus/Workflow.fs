@@ -9,8 +9,7 @@ type Transition = {
     Id: TransitionId
     Name: string
     SourceState: StateId
-    TargetState: StateId
-}
+    TargetState: StateId }
 
 type State = {
     Id: StateId
@@ -36,20 +35,19 @@ type WorkflowEvent =
 | WorkflowRenamed of WorkflowNamedEvent
 | WorkflowCreatedAsCopy of WorkflowCreatedAsCopyEvent
 | WorkflowCopied of WorkflowCopiedEvent
-| WorkflowPublished of VersionedWorkflowEvent
-| VersionIncremented of VersionedWorkflowEvent
-| WorkflowWithdrawn of VersionedWorkflowEvent
+| WorkflowPublished of VersionedWorkflowId
+| VersionIncremented of VersionedWorkflowId
+| WorkflowWithdrawn of VersionedWorkflowId
 | WorkflowNamed of WorkflowNamedEvent
 | StateAdded of StateEditEvent
-| StateDropped of StateEvent
 | StateRenamed of StateEditEvent
+| StateDropped of StateEvent
 | TerminalStateDesignated of StateEvent
 | TerminalStateUnDesignated of StateEvent
 | TransitionAdded of TransitionEditEvent
 | TransitionChanged of TransitionEditEvent
 | TransitionDropped of TransitionDroppedEvent
 and WorkflowNamedEvent = { WorkflowId: WorkflowId; Name: string; }
-and VersionedWorkflowEvent = VersionedWorkflowId
 and WorkflowCreatedAsCopyEvent = { WorkflowId: WorkflowId; Source: VersionedWorkflowId; CopyName: string }
 and WorkflowCopiedEvent = { WorkflowId: WorkflowId; Version: Version; Target: WorkflowId }
 and StateEditEvent = { WorkflowId: WorkflowId; StateId: StateId; StateName: string }
@@ -81,17 +79,17 @@ type EditStateCommand (workflowId, stateId, stateName) =
     inherit AddStateCommand(workflowId, stateName)
     member __.StateId = stateId
 
-type AddTransitionCommand (workflowId, transitionName, initialState, targetState) = 
+type AddTransitionCommand (workflowId, transitionName, sourceState, targetState) = 
     do
         requireStringVal "transition name" transitionName
-        match initialState = targetState with
+        match sourceState = targetState with
             | true ->
             let errMsg = targetState |> sprintf "targetState must be different than initialState (%O)"
             raise (System.ArgumentException(errMsg,"targetState"))
             | false -> ()
     member __.WorkflowId = workflowId
     member __.TransitionName = transitionName
-    member __.InitialState = initialState
+    member __.SourceState = sourceState
     member __.TargetState = targetState
 
 type EditTransitionCommand (workflowId, transitionId, transitionName, initialState, targetState) = 
@@ -113,12 +111,11 @@ type WorkflowCommand =
 | AddTransition of AddTransitionCommand
 | EditTransition of EditTransitionCommand
 | DropTransition of DropTransitionCommand
-and StateCommand = { WorkflowId: WorkflowId; State: StateId }
-and DropTransitionCommand = { WorkflowId: WorkflowId; Transition: TransitionId }
+and StateCommand = { WorkflowId: WorkflowId; StateId: StateId }
+and DropTransitionCommand = { WorkflowId: WorkflowId; TransitionId: TransitionId }
 
 type Problems = 
-    {
-    NoTerminalStates: bool
+  { NoTerminalStates: bool
     UnreachableStates: Set<StateId>
     CannotReachAnyTerminalState: Set<StateId> }
   with 
@@ -454,33 +451,33 @@ module Workflow =
         |> bindExists command.WorkflowId
 
     let inline internal initialStateError command errMsg x =
-        match command.State <> 0u with
+        match command.StateId <> 0u with
           | true -> Ok x
           | false -> InitialStateException(errMsg,command.WorkflowId) :> exn |> Error
 
     let dropState (command: StateCommand) = 
-        [ StateDropped { WorkflowId = command.WorkflowId; StateId = command.State } ]
-        |> ifStateExists command.State
+        [ StateDropped { WorkflowId = command.WorkflowId; StateId = command.StateId } ]
+        |> ifStateExists command.StateId
         >> Result.bind (initialStateError command "Initial state cannot be removed")
         |> bindExists command.WorkflowId
 
     let setTerminalState (command: StateCommand ) =
         fun s ->
             let events =
-                match s.TerminalStates.Contains command.State with
+                match s.TerminalStates.Contains command.StateId with
                   | true -> []
-                  | false -> [ TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = command.State } ]
-            s |> ifStateExists command.State events
+                  | false -> [ TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = command.StateId } ]
+            s |> ifStateExists command.StateId events
             |> Result.bind (initialStateError command "Initial state cannot be a terminal state")
         |> bindExists command.WorkflowId
 
     let unSetTerminalState (command: StateCommand ) =
         fun s ->
             let events =
-                match s.TerminalStates.Contains command.State with
-                  | true -> [ TerminalStateUnDesignated { WorkflowId = command.WorkflowId; StateId = command.State } ]
+                match s.TerminalStates.Contains command.StateId with
+                  | true -> [ TerminalStateUnDesignated { WorkflowId = command.WorkflowId; StateId = command.StateId } ]
                   | false -> []
-            s |> ifStateExists command.State events
+            s |> ifStateExists command.StateId events
         |> bindExists command.WorkflowId
 
     let internal transitionCheck workflowModel transEvent x =
@@ -502,7 +499,7 @@ module Workflow =
                     WorkflowId = command.WorkflowId
                     TransitionId = n
                     TransitionName = command.TransitionName
-                    SourceState = command.InitialState 
+                    SourceState = command.SourceState 
                     TargetState = command.TargetState }
                 [ TransitionAdded editEvent ]
                 |> transitionCheck s editEvent)
@@ -519,15 +516,15 @@ module Workflow =
                 WorkflowId = command.WorkflowId
                 TransitionId = command.TransitionId
                 TransitionName = command.TransitionName
-                SourceState = command.InitialState 
+                SourceState = command.SourceState 
                 TargetState = command.TargetState }            
             s |> ifTransitionExists command.TransitionId [ TransitionChanged editEvent ]
             |> Result.bind (transitionCheck { s with Transitions = s.Transitions |> Map.remove command.TransitionId } editEvent)
         |> bindExists command.WorkflowId
 
     let dropTransition (command: DropTransitionCommand) =
-        [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.Transition } ]
-        |> ifTransitionExists command.Transition
+        [ TransitionDropped { WorkflowId = command.WorkflowId; TransitionId = command.TransitionId } ]
+        |> ifTransitionExists command.TransitionId
         |> bindExists command.WorkflowId
 
     let handle = 

@@ -13,7 +13,7 @@ and TransitionEvent = { JourneyId: JourneyId; TransitionId: TransitionId; State:
 
 type JourneyCommand<'t> =
 | CreateJourney of CreateJourneyCommand<'t>
-| Transition of TransitionCommand
+| TransitionCommand of TransitionCommand
 | ReActivate of TransitionCommand
 and CreateJourneyCommand<'t> = { JourneyId: JourneyId; VersionedWorkflowId: VersionedWorkflowId; Subject: 't }
 and TransitionCommand = { JourneyId: JourneyId; TransitionId: TransitionId }
@@ -68,7 +68,7 @@ module Journey =
 
     let journeyId = function
         | CreateJourney c -> c.JourneyId
-        | Transition c -> c.JourneyId
+        | TransitionCommand c -> c.JourneyId
         | ReActivate c -> c.JourneyId
 
     let versionedWorkflowId = function
@@ -136,7 +136,7 @@ module Journey =
             |> Result.bind(fun workflow -> commandHandler workflow journeyState)
         function
         | CreateJourney command -> createJourney<'t> workflowLookup command
-        | Transition command -> transition<'t> command |> bindLookup command.JourneyId
+        | TransitionCommand command -> transition<'t> command |> bindLookup command.JourneyId
         | ReActivate command -> reActivate<'t> command |> bindLookup command.JourneyId
 
     let evolve<'t> (workflow:WorkflowModel) (state:Journey<'t>) (event:JourneyEvent<'t>) =
