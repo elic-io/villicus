@@ -38,60 +38,70 @@ module Serialization =
 
     type WorkflowEvent with
       static member Decoder =
-        let decodeNamed (get:Decode.IGetters) =
-            { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder
-              Name = get.Required.Field "name" Decode.string }
-        let decodeVersion (get:Decode.IGetters) =
-            { Id = get.Required.Field "id" WorkflowId.Decoder 
-              Version = get.Required.Field "version" Version.Decoder }
-        let decodeStateEdit (get:Decode.IGetters) =
-            { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder 
-              StateId = get.Required.Field "stateId" Decode.uint32
-              StateName = get.Required.Field "stateName" Decode.string }
-        let decodeState (get:Decode.IGetters) =
-            { StateEvent.WorkflowId =
-                get.Required.Field "workflowId" WorkflowId.Decoder 
-              StateEvent.StateId =
-                get.Required.Field "stateId" Decode.uint32 }
-        let decodeTransitionEdit (get:Decode.IGetters) =
-            { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder 
-              TransitionId = get.Required.Field "transitionId" Decode.uint32
-              TransitionName = get.Required.Field "transitionName" Decode.string
-              SourceState = get.Required.Field "sourceState" Decode.uint32
-              TargetState = get.Required.Field "targetState" Decode.uint32 }
-        Decode.object
-          (fun get ->
-            match get.Required.Field "eventType" Decode.string with
-            | "workflowCreated" -> decodeNamed get |> WorkflowCreated |> Decode.succeed
-            | "workflowRenamed" -> decodeNamed get |> WorkflowRenamed |> Decode.succeed
-            | "workflowNamed" ->  decodeNamed get |> WorkflowNamed |> Decode.succeed
+        let decodeNamed eventType =
+          Decode.map2
+            (fun w n -> {WorkflowId = w; Name = n } |> eventType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "name" Decode.string)
+        let decodeVersion eventType =
+          Decode.map2
+            (fun w v -> { Id = w; Version = v } |> eventType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "version" Version.Decoder)
+        let decodeStateEdit eventType =
+          Decode.map3
+            (fun w s sn -> { WorkflowId=w; StateId=s; StateName=sn } |> eventType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "stateId" Decode.uint32)
+            (Decode.field "stateName" Decode.string)
+        let decodeState eventType =
+          Decode.map2
+            (fun w s -> ({ WorkflowId = w; StateId = s }:StateEvent) |> eventType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "stateId" Decode.uint32)
+        let decodeTransitionEdit eventType =
+          Decode.map5
+            (fun w t tn ss ts -> { WorkflowId = w; TransitionId = t; TransitionName = tn;
+                SourceState = ss; TargetState = ts } |> eventType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "transitionId" Decode.uint32)
+            (Decode.field "transitionName" Decode.string)
+            (Decode.field "sourceState" Decode.uint32)
+            (Decode.field "targetState" Decode.uint32)
+        Decode.field "eventType" Decode.string
+        |> Decode.andThen (
+            function
+            | "workflowCreated" -> decodeNamed WorkflowCreated
+            | "workflowRenamed" -> decodeNamed WorkflowRenamed
+            | "workflowNamed" ->  decodeNamed WorkflowNamed
             | "workflowCreatedAsCopy" ->
-                { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder
-                  Source = get.Required.Field "source" VersionedWorkflowId.Decoder
-                  CopyName = get.Required.Field "copyName" Decode.string }
-                |> WorkflowCreatedAsCopy |> Decode.succeed
+              Decode.map3
+                (fun w s c -> { WorkflowId = w; Source = s; CopyName = c } |> WorkflowCreatedAsCopy )
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "source" VersionedWorkflowId.Decoder)
+                (Decode.field "copyName" Decode.string)
             | "workflowCopied" ->
-                { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder
-                  Version = get.Required.Field "version" Version.Decoder
-                  Target = get.Required.Field "target" WorkflowId.Decoder }
-                |> WorkflowCopied |> Decode.succeed
-            | "workflowPublished" -> decodeVersion get |> WorkflowPublished |> Decode.succeed
-            | "versionIncremented" -> decodeVersion get |> VersionIncremented |> Decode.succeed
-            | "workflowWithdrawn" -> decodeVersion get |> WorkflowWithdrawn |> Decode.succeed
-            | "stateAdded" -> decodeStateEdit get |> StateAdded |> Decode.succeed
-            | "stateRenamed" -> decodeStateEdit get |> StateRenamed |> Decode.succeed
-            | "stateDropped" -> decodeState get |> StateDropped |> Decode.succeed
-            | "terminalStateDesignated" -> decodeState get |> TerminalStateDesignated |> Decode.succeed
-            | "terminalStateUnDesignated" -> decodeState get |> TerminalStateUnDesignated |> Decode.succeed
-            | "transitionAdded" -> decodeTransitionEdit get |> TransitionAdded |> Decode.succeed
-            | "transitionChanged" -> decodeTransitionEdit get |> TransitionChanged |> Decode.succeed
-            | "transitionDropped" -> 
-                { TransitionDroppedEvent.WorkflowId =
-                    get.Required.Field "workflowId" WorkflowId.Decoder 
-                  TransitionDroppedEvent.TransitionId =
-                    get.Required.Field "transitionId" Decode.uint32 }
-                |> TransitionDropped |> Decode.succeed
-            | s -> s |> sprintf "Invalid event type: '%s'" |> Decode.fail )
+              Decode.map3
+                (fun w v t -> { WorkflowId = w; Version = v; Target = t } |> WorkflowCopied )
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "version" Version.Decoder)
+                (Decode.field "target" WorkflowId.Decoder)
+            | "workflowPublished" -> decodeVersion WorkflowPublished
+            | "versionIncremented" -> decodeVersion VersionIncremented
+            | "workflowWithdrawn" -> decodeVersion WorkflowWithdrawn
+            | "stateAdded" -> decodeStateEdit StateAdded
+            | "stateRenamed" -> decodeStateEdit StateRenamed
+            | "stateDropped" -> decodeState StateDropped
+            | "terminalStateDesignated" -> decodeState TerminalStateDesignated
+            | "terminalStateUnDesignated" -> decodeState TerminalStateUnDesignated
+            | "transitionAdded" -> decodeTransitionEdit TransitionAdded
+            | "transitionChanged" -> decodeTransitionEdit TransitionChanged
+            | "transitionDropped" ->
+              Decode.map2
+                (fun w t -> TransitionDropped ({ WorkflowId = w; TransitionId = t }:TransitionDroppedEvent))
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "transitionId" Decode.uint32)
+            | s -> s |> sprintf "Invalid event type: '%s'" |> Decode.fail)
  
       static member Encoder (x:WorkflowEvent) =
         let eventType,attributes =
@@ -101,20 +111,20 @@ module Serialization =
               "name", Encode.string e.Name ]
           let version t (e:VersionedWorkflowId) =
             t,
-            [ "id", WorkflowId.Encoder e.Id
+            [ "workFlowId", WorkflowId.Encoder e.Id
               "version", Version.Encoder e.Version ]
           let stateEdited t (e:StateEditEvent) =
             t,
-            [ "id", WorkflowId.Encoder e.WorkflowId
+            [ "workFlowId", WorkflowId.Encoder e.WorkflowId
               "stateId", Encode.uint32 e.StateId
               "stateName", Encode.string e.StateName ]
           let state t (e:StateEvent) =
             t,
-            [ "id", WorkflowId.Encoder e.WorkflowId
+            [ "workFlowId", WorkflowId.Encoder e.WorkflowId
               "stateId", Encode.uint32 e.StateId ]
           let transitionEdit t (e:TransitionEditEvent) =
             t,
-            [ "id", WorkflowId.Encoder e.WorkflowId
+            [ "workFlowId", WorkflowId.Encoder e.WorkflowId
               "transitionId", Encode.uint32 e.TransitionId
               "transitionName", Encode.string e.TransitionName
               "sourceState", Encode.uint32 e.SourceState
@@ -145,77 +155,81 @@ module Serialization =
           | TransitionChanged e -> transitionEdit "transitionChanged" e
           | TransitionDropped e ->
             "transitionDropped",
-            [ "id", WorkflowId.Encoder e.WorkflowId
+            [ "workFlowId", WorkflowId.Encoder e.WorkflowId
               "transitionId", Encode.uint32 e.TransitionId ]
         [ "eventType", Encode.string eventType ]
         |> List.append attributes
         |> Encode.object
 
     type WorkflowCommand with
-      static member Decoder =
-        let decodeCreate (get:Decode.IGetters) = 
-          CreateWorkflowCommand(
-            get.Required.Field "workflowId" WorkflowId.Decoder,
-            get.Required.Field "name" Decode.string)
-        let state (get:Decode.IGetters) = 
-          { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder
-            StateId = get.Required.Field "stateId" Decode.uint32 }
-        Decode.object
-          (fun get ->
-            match get.Required.Field "commandType" Decode.string with
-            | "createWorkflow" -> decodeCreate get |> CreateWorkflow |> Decode.succeed
-            | "renameWorkflow" -> decodeCreate get |> RenameWorkflow |> Decode.succeed
+      static member Decoder : Decode.Decoder<WorkflowCommand> =
+        let decodeCreate commandType =
+          Decode.map2 
+            (fun workflowId name -> CreateWorkflowCommand(workflowId,name) |> commandType)
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "name" Decode.string)
+        let decodePublish commandType =
+          Decode.map2
+            (fun id version -> commandType { Id = id; Version = version })
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "version" Version.Decoder)
+        let decodeState commandType =
+          Decode.map2 
+            (fun workflowId stateId -> commandType { WorkflowId = workflowId; StateId = stateId })
+            (Decode.field "workflowId" WorkflowId.Decoder)
+            (Decode.field "stateId" Decode.uint32)
+        Decode.field "commandType" Decode.string
+        |> Decode.andThen (
+            function
+            | "createWorkflow" -> decodeCreate CreateWorkflow
+            | "renameWorkflow" -> decodeCreate RenameWorkflow
             | "copyWorkflow" ->
-              CopyWorkflowCommand(
-                get.Required.Field "source" VersionedWorkflowId.Decoder,
-                get.Required.Field "target" WorkflowId.Decoder,
-                get.Required.Field "copyName" Decode.string )
-              |> CopyWorkflow |> Decode.succeed
-            | "publishWorkflow" ->
-              get.Required.Field "workflowId" WorkflowId.Decoder
-              |> PublishWorkflow |> Decode.succeed
-            | "rePublishWorkflow" ->
-              { Id = get.Required.Field "workflowId" WorkflowId.Decoder
-                Version = get.Required.Field "version" Version.Decoder }
-              |> RePublishWorkflow |> Decode.succeed
-            | "withdrawWorkflow" ->
-              { Id = get.Required.Field "workflowId" WorkflowId.Decoder
-                Version = get.Required.Field "version" Version.Decoder }
-              |> WithdrawWorkflow |> Decode.succeed
+              Decode.map3
+                (fun source target copyName -> 
+                    CopyWorkflowCommand(source,target,copyName) |> CopyWorkflow)
+                (Decode.field "source" VersionedWorkflowId.Decoder)
+                (Decode.field "target" WorkflowId.Decoder)
+                (Decode.field "copyName" Decode.string)
+            | "publishWorkflow" -> Decode.field "workflowId" WorkflowId.Decoder |> Decode.map PublishWorkflow
+            | "rePublishWorkflow" -> decodePublish RePublishWorkflow
+            | "withdrawWorkflow" -> decodePublish WithdrawWorkflow
             | "addState" ->
-              AddStateCommand(
-                get.Required.Field "workflowId" WorkflowId.Decoder,
-                get.Required.Field "stateName" Decode.string )
-              |> AddState |> Decode.succeed
+              Decode.map2
+                (fun workflowId stateName -> AddStateCommand(workflowId,stateName)|> AddState)
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "stateName" Decode.string)
             | "renameState" ->
-              EditStateCommand(
-                get.Required.Field "workflowId" WorkflowId.Decoder,
-                get.Required.Field "stateId" Decode.uint32,
-                get.Required.Field "stateName" Decode.string )
-              |> RenameState |> Decode.succeed
-            | "dropState" -> state get |> DropState |> Decode.succeed
-            | "setTerminalState" -> state get |> SetTerminalState |> Decode.succeed
-            | "unSetTerminalState" -> state get |> UnSetTerminalState |> Decode.succeed
-            | "addTransition" -> 
-              AddTransitionCommand(
-                get.Required.Field "workflowId" WorkflowId.Decoder,
-                get.Required.Field "transitionName" Decode.string,
-                get.Required.Field "sourceState" Decode.uint32,
-                get.Required.Field "targetState" Decode.uint32)
-              |> AddTransition |> Decode.succeed
+              Decode.map3
+                (fun workflowId stateId stateName -> EditStateCommand(workflowId,stateId,stateName) |> RenameState)
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "stateId" Decode.uint32)
+                (Decode.field "stateName" Decode.string)
+            | "dropState" -> decodeState DropState
+            | "setTerminalState" -> decodeState SetTerminalState
+            | "unSetTerminalState" -> decodeState UnSetTerminalState
+            | "addTransition" ->
+              Decode.map4
+                (fun w tn ss ts -> AddTransitionCommand(w,tn,ss,ts) |> AddTransition)
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "transitionName" Decode.string)
+                (Decode.field "sourceState" Decode.uint32)
+                (Decode.field "targetState" Decode.uint32)
             | "editTransition" ->
-              EditTransitionCommand(
-                get.Required.Field "workflowId" WorkflowId.Decoder,
-                get.Required.Field "transitionId" Decode.uint32,
-                get.Required.Field "transitionName" Decode.string,
-                get.Required.Field "sourceState" Decode.uint32,
-                get.Required.Field "targetState" Decode.uint32)
-              |> EditTransition |> Decode.succeed
+              Decode.map5
+                (fun w t tn ss ts -> EditTransitionCommand(w,t,tn,ss,ts) |> EditTransition)
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "transitionId" Decode.uint32)
+                (Decode.field "transitionName" Decode.string)
+                (Decode.field "sourceState" Decode.uint32)
+                (Decode.field "targetState" Decode.uint32)
             | "dropTransition" ->
-              { WorkflowId = get.Required.Field "workflowId" WorkflowId.Decoder
-                TransitionId = get.Required.Field "transitionId" Decode.uint32 }
-              |> DropTransition |> Decode.succeed
-            | s -> s |> sprintf "Invalid command type: '%s'" |> Decode.fail )
+              Decode.map2
+                (fun w t -> DropTransition { WorkflowId = w; TransitionId = t })
+                (Decode.field "workflowId" WorkflowId.Decoder)
+                (Decode.field "transitionId" Decode.uint32)
+            | s -> 
+                s |> sprintf "Invalid command type: '%s'" |> Decode.fail)
+
       static member Encoder (x:WorkflowCommand) =
         let commandType,attributes =
           let create t (c:CreateWorkflowCommand) =
