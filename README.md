@@ -1,2 +1,2 @@
-# flowmaster
-simple workflow engine
+# villicus
+event sourced workflow engine
