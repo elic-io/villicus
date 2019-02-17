@@ -1,5 +1,3 @@
-// Learn more about F# at http://fsharp.org
-
 open Suave
 open Suave.Operators
 open Suave.Filters
@@ -15,6 +13,7 @@ open Thoth.Json.Net
 
 let utf8 = System.Text.Encoding.UTF8
 
+let clientPath = System.IO.Path.Combine("../", "Client") |> System.IO.Path.GetFullPath
 
 [<EntryPoint>]
 let main argv =
@@ -33,11 +32,11 @@ let main argv =
         fun r -> wfCommand |> ResultCommandStream.New r |> ResultCommandStream
         |> wfDispatcher.Agent.PostAndAsyncReply
         |> Async.bind(function
-            | Ok (eventIndex,eventList) ->
+          | Ok (eventIndex,eventList) ->
                (eventIndex |> string |> Writers.setHeader "Etag" >=>
                  (eventList |> List.map (WorkflowEvent.Encoder) |> Encode.list
                     |> Encode.toString 4 |> Successful.CREATED)) ctx
-            | Error error ->
+          | Error error ->
               (errorContent >=>            
                 match error with
                 | :? DuplicateWorkflowIdException as e ->
@@ -49,10 +48,11 @@ let main argv =
       fun (ctx:HttpContext) ->
         ctx.request.rawForm |> utf8.GetString 
         |> Decode.fromString WorkflowCommand.Decoder |> function
-          | Error msg -> (errorContent >=> RequestErrors.BAD_REQUEST msg) ctx
-          | Ok wfCommand -> processCommand wfCommand ctx
+           | Error msg ->
+                    (errorContent >=> RequestErrors.BAD_REQUEST msg) ctx
+           | Ok wfCommand -> processCommand wfCommand ctx
 
-    let appendIdandSend wfidStr : WebPart =
+    let appendIdandSend (wfidStr:string) : WebPart =
         fun (ctx:HttpContext) ->
           printfn "requested id %s" wfidStr
           match System.Guid.TryParse wfidStr with
@@ -68,7 +68,7 @@ let main argv =
         fun (ctx:HttpContext) ->
           printfn "requested id %s" wfidStr
           match System.Guid.TryParse wfidStr with
-            | true,wfid ->
+          | true,wfid ->
                 wfDispatcher.Agent.PostAndAsyncReply(fun r -> GetState (WorkflowId wfid,0L,r))
                 |> Async.bind (function
                     | Ok (eventIndex,wf) ->
@@ -87,10 +87,10 @@ let main argv =
         ctx.request.query
         |> List.choose (fun (k,v) -> v |> Option.map (fun v' -> k.ToLower(),v')) |> Map.ofList
 
-    let getIntOption (name:string) minVal maxVal defaultVal options =
+    let getIntOption (name:string) (minVal:int64) (maxVal:int64) (defaultVal:int64) options =
         match options |> Map.tryFind (name.ToLower()) with
         //todo: validate pagesize ?
-        | Some s -> match System.Int64.TryParse(s) with | true,n -> n | _ -> defaultVal
+        | Some (s:string) -> match System.Int64.TryParse(s) with | true,n -> n | _ -> defaultVal
         | None -> defaultVal
         |> fun x -> System.Math.Max(minVal,System.Math.Min(x,maxVal))
 
@@ -100,10 +100,10 @@ let main argv =
           let options = getOptions ctx
           printfn "requested id %s" wfidStr
           match System.Guid.TryParse wfidStr with
-            | true,wfid ->
+          | true,wfid ->
                 let pageSize = 
                     options |> getIntOption "pageSize" 10L 100L 50L
-                    |> fun x -> System.Convert.ToInt32(x) // don't need to catch exn because we know it is in range 10-50
+                    |> fun (x:int64) -> System.Convert.ToInt32(x) // don't need to catch exn because we know it is in range 10-50
                 let offSet = options |> getIntOption "offset" 0L System.Int64.MaxValue 0L
                 wfDispatcher.Agent.PostAndAsyncReply(fun r -> ReadStream.New (WorkflowId wfid) offSet pageSize r |> ReadStream)
                 |> Async.bind (function
@@ -144,22 +144,27 @@ let main argv =
       Writers.setHeader "Content-Type" "application/json; charset=UTF-8" >=>
       choose
         [ GET >=> choose
-            [ Filters.pathScan "/workflow/%s/events" (fun w -> getEvents w) 
-              Filters.pathScan "/workflow/%s" getWorkflow
+            [ path "/" >=> Files.file "index.html"
+              path "" >=> Files.file "index.html"
+              Filters.pathScan "/api/workflow/%s/events" (fun w -> getEvents w) 
+              Filters.pathScan "/api/workflow/%s" getWorkflow
               RequestErrors.NOT_FOUND "Invalid Uri Path" ]
           POST >=> choose
-            [ path "/workflow" >=> sendCommand
-              Filters.pathScan "/workflow/%s" appendIdandSend
+            [ path "/api/workflow" >=> sendCommand
+              Filters.pathScan "/api/workflow/%s" appendIdandSend
               RequestErrors.NOT_FOUND "Invalid Uri Path" ]
         ]
   
     // default is to run on all local external interfaces
     let startConfig = 
-      { defaultConfig with 
-          bindings = 
+      { defaultConfig with
+          homeFolder = Some (System.IO.Path.GetFullPath "../deploy")      
+          bindings =
+              let defaultHost = (List.head defaultConfig.bindings).socketBinding.ip
               System.Net.Dns.GetHostAddresses(System.Net.Dns.GetHostName())
-              |> Array.map (fun ip -> HttpBinding.create HTTP ip HttpBinding.DefaultBindingPort)
-              |> Array.toList }          
+              |> Array.append [| defaultHost |]
+              |> Array.map (fun ip -> HttpBinding.create HTTP ip 8085us)
+              |> Array.toList }
           //[ HttpBinding.createSimple HTTP "10.0.1.34" 9000 ] }
 
     startWebServer startConfig app

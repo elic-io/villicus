@@ -1,3 +1,4 @@
-FSharp.Core
-Suave
-Thoth.Json.Net
+group Server
+    FSharp.Core
+    Suave
+    Thoth.Json.Net

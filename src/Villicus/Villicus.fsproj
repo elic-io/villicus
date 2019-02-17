@@ -15,7 +15,6 @@
     <Compile Include="CommandHandler.fs" />
     <Compile Include="MemoryStore.fs" />
     <Compile Include="MemoryRepository.fs" />
-    <Compile Include="Serialization.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>
