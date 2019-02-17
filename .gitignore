@@ -5,6 +5,8 @@
 *.suo
 *.user
 *.sln.docstates
+.fable/
+.fake/
 
 # Xamarin Studio / monodevelop user-specific
 *.userprefs
@@ -168,6 +170,14 @@ $RECYCLE.BIN/
 
 # NuGet Packages Directory
 packages/
+paket-files/
+.paket/
+
+# JS packages
+node_modules/
+
+# generated js
+src/Client/public/js
 
 # Test results produced by build
 TestResults.xml
@@ -184,3 +194,6 @@ docsrc/content/license.md
 docsrc/content/release-notes.md
 .fake
 docsrc/tools/FSharp.Formatting.svclog
+.idea/
+*.DotSettings.user
+deploy
