@@ -8,3 +8,4 @@ group Client
     dotnet-fable
     Fulma
     Fable.FontAwesome.Free
+    Fable.Powerpack

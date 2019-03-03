@@ -15,17 +15,77 @@ let utf8 = System.Text.Encoding.UTF8
 
 let clientPath = System.IO.Path.Combine("../", "Client") |> System.IO.Path.GetFullPath
 
+let createFileRepo dataDir : Persistence.Repository<WorkflowId,WorkflowModel> =
+    let readFromfile (file:string) =
+        match System.IO.File.Exists file with
+        | false -> Async.result None
+        | true ->
+            use sr = new System.IO.StreamReader(file)
+            sr.ReadToEndAsync() |> Async.AwaitTask
+            |> Async.Catch |> Async.map Result.ofChoice
+            |> Async.map(Result.bind (Decode.fromString WorkflowModel.Decoder >> Result.mapError exn)
+                >> Result.fold Some (fun _ -> None))
+    let getFileName (iD:WorkflowId) = dataDir + iD.ToString()
+    { Retrieve = getFileName >> readFromfile
+      RetrieveAll = fun () ->
+        System.IO.Directory.GetFiles(dataDir)
+        |> Seq.toArray |> Array.map readFromfile
+        |> Async.Parallel
+        |> Async.map (Array.choose id >> Seq.ofArray)
+      Save = (fun key value ->
+        System.IO.File.WriteAllTextAsync(getFileName key, value |> WorkflowModel.Encoder |> Encode.toString 0)
+        |> Async.AwaitTask
+        |> Async.Catch |> Async.map Result.ofChoice) }
+
+let inline runAndDiscard x = x |> Async.Ignore |> Async.Start
+let projectToDir dispatcher (repo:Persistence.Repository<WorkflowId,WorkflowModel>) =
+    let projector = // (datastore:Persistence.Repository<WorkflowId,WorkflowModel>) =
+        MailboxProcessor.Start<| fun inbox ->
+            let rec loop () = async {
+                let! event = inbox.Receive ()
+                do!
+                  let workflowId = Workflow.eWorkflowId event
+                  workflowId
+                  |> repo.Retrieve
+                  |> Async.bind(fun state -> 
+                      event |> Workflow.evolve state |> Async.result |> Async.bind(
+                        function 
+                        | Some wf -> repo.Save workflowId wf |> Async.Ignore 
+                        | None -> Async.result ()))
+                return! loop () }
+            loop ()            
+    dispatcher.Observable |> Observable.add projector.Post
+
+
+let getTempFilePath () =
+    let path = System.IO.Path.Combine(System.IO.Path.GetTempPath() + "/", "workflowCache/")
+    try
+        System.IO.Directory.Delete path
+    with _ -> ()
+    System.IO.Directory.CreateDirectory path
+    |> fun di -> di.FullName
+
 [<EntryPoint>]
 let main argv =
 
     let repo = Persistence.MemoryRepository.create<VersionedWorkflowId,Published<WorkflowModel>> ()
+
+    let fileCacheDir = getTempFilePath ()
+    printfn "file cache created at: '%s'" fileCacheDir
+    
+    let fileRepo =
+      // createFileRepo fileCacheDir
+      Persistence.MemoryRepository.create<WorkflowId,WorkflowModel> ()
+    
     let wfDispatcher = 
         let d = Persistence.MemoryEventStore.create<string,WorkflowEvent> () |> Workflow.createDispatcher 0
         Workflow.versionProjection d repo.Save
+        projectToDir d fileRepo
         d
     let jDispatcher =
         let es = Persistence.MemoryEventStore.create<string,JourneyEvent<System.Guid>> ()
         Journey.createDispatcher 0 es repo
+
 
     let errorContent = Writers.setHeader "Content-Type" "text/plain; charset=UTF-8"
     let processCommand wfCommand ctx =
@@ -82,6 +142,18 @@ let main argv =
                     | Error error -> 
                         (errorContent >=> ServerErrors.INTERNAL_ERROR error.Message) ctx)            
             | _ -> (wfidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST >=> errorContent) ctx
+
+    let getAllWorkflows : WebPart =
+        // fileRepo.RetrieveAll ()
+        // |> Async.bind(Seq.toList 
+        //              >> List.map WorkflowModel.Encoder >> Encode.list 
+        //              >> Encode.toString 4 >> Successful.OK)
+        fun (ctx:HttpContext) ->
+            fileRepo.RetrieveAll ()
+            |> Async.bind(fun all ->
+                (all |> Seq.toList 
+                 |> List.map WorkflowModel.Encoder |> Encode.list 
+                 |> Encode.toString 4 |> Successful.OK) ctx)
 
     let getOptions ctx =
         ctx.request.query
@@ -140,12 +212,14 @@ let main argv =
                     | Error error -> 
                         (errorContent >=> ServerErrors.INTERNAL_ERROR error.Message) ctx)            
             | _ -> (wfidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST >=> errorContent) ctx
+
     let app : WebPart =
       Writers.setHeader "Content-Type" "application/json; charset=UTF-8" >=>
       choose
         [ GET >=> choose
             [ path "/" >=> Files.file "index.html"
               path "" >=> Files.file "index.html"
+              path "/api/workflow" >=> getAllWorkflows
               Filters.pathScan "/api/workflow/%s/events" (fun w -> getEvents w) 
               Filters.pathScan "/api/workflow/%s" getWorkflow
               RequestErrors.NOT_FOUND "Invalid Uri Path" ]
@@ -167,5 +241,8 @@ let main argv =
               |> Array.toList }
           //[ HttpBinding.createSimple HTTP "10.0.1.34" 9000 ] }
 
-    startWebServer startConfig app
+    try
+      startWebServer startConfig app
+    finally
+      System.IO.Directory.Delete (fileCacheDir, true)
     0

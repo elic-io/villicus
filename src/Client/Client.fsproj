@@ -7,14 +7,14 @@
     <Compile Include="Global.fs" />
     <!-- Info -->
     <Compile Include="Info/View.fs" />
-    <!-- Counter -->
-    <Compile Include="Counter/Types.fs" />
-    <Compile Include="Counter/State.fs" />
-    <Compile Include="Counter/View.fs" />
-    <!-- Home -->
-    <Compile Include="Home/Types.fs" />
-    <Compile Include="Home/State.fs" />
-    <Compile Include="Home/View.fs" />
+    <!-- ListWorkflows -->
+    <Compile Include="ListWorkflows/Util.fs" />
+    <Compile Include="../Villicus/Common.fs" />
+    <Compile Include="../Villicus/Workflow.fs" />
+    <Compile Include="ListWorkflows/Types.fs" />
+    <Compile Include="../Villicus.Api/Serialize.fs" />
+    <Compile Include="ListWorkflows/State.fs" />
+    <Compile Include="ListWorkflows/View.fs" />
     <!-- Navbar -->
     <Compile Include="Navbar/View.fs" />
     <!-- App -->

@@ -36,6 +36,7 @@ group Client
   # nuget Fable.Recharts
   nuget Fulma
   nuget Fable.FontAwesome.Free
+  nuget Fable.Powerpack
   clitool dotnet-fable
 
 group Build

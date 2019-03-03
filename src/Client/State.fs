@@ -10,8 +10,7 @@ open Types
 let pageParser: Parser<Page->Page,Page> =
     oneOf [
         map About (s "about")
-        map Counter (s "counter")
-        map Home (s "home")
+        map ListWorkflows (s "workflows")
     ]
 
 let urlUpdate (result : Page option) model =
@@ -25,21 +24,17 @@ let urlUpdate (result : Page option) model =
 let init result =
     let (counter, counterCmd) = Counter.State.init()
     let (home, homeCmd) = Home.State.init()
+    let (listWorkflows, wfCmd) = ListWorkflows.State.init()
     let (model, cmd) =
         urlUpdate result
-          { CurrentPage = Home
-            Counter = counter
-            Home = home }
+          { CurrentPage = ListWorkflows
+            ListWorkflows = listWorkflows }
 
     model, Cmd.batch [ cmd
-                       Cmd.map CounterMsg counterCmd
-                       Cmd.map HomeMsg homeCmd ]
+                       Cmd.map ListWFMsg wfCmd ]
 
 let update msg model =
     match msg with
-    | CounterMsg msg ->
-        let (counter, counterCmd) = Counter.State.update msg model.Counter
-        { model with Counter = counter }, Cmd.map CounterMsg counterCmd
-    | HomeMsg msg ->
-        let (home, homeCmd) = Home.State.update msg model.Home
-        { model with Home = home }, Cmd.map HomeMsg homeCmd
+    | ListWFMsg msg ->
+        let (listWF, listWFCmd) = ListWorkflows.State.update msg model.ListWorkflows
+        { model with ListWorkflows = listWF }, Cmd.map ListWFMsg listWFCmd

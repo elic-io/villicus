@@ -32,8 +32,7 @@ let menu currentPage =
         [ str "General" ]
       ul
         [ ClassName "menu-list" ]
-        [ menuItem "Home" Home currentPage
-          menuItem "Counter sample" Counter currentPage
+        [ menuItem "All Workflows" ListWorkflows currentPage
           menuItem "About" Page.About currentPage ] ]
 
 let root model dispatch =
@@ -41,8 +40,7 @@ let root model dispatch =
   let pageHtml page =
     match page with
     | Page.About -> Info.View.root
-    | Counter -> Counter.View.root model.Counter (CounterMsg >> dispatch)
-    | Home -> Home.View.root model.Home (HomeMsg >> dispatch)
+    | ListWorkflows -> ListWorkflows.View.root model.ListWorkflows (ListWFMsg >> dispatch)
 
   div
     []

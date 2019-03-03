@@ -4,6 +4,7 @@ type VersionMisMatchException (expected,actual) =
     inherit exn(sprintf "version %O expected, recieved %O" expected actual)
   with
     member __.Expected = expected
+
     member __.Actual = actual
 
 type StreamDataStore<'key,'event> = {
@@ -12,5 +13,5 @@ type StreamDataStore<'key,'event> = {
 
 type Repository<'key,'value> = {
     Retrieve: 'key -> Async<'value option>
-    RetrieveAll: Async<'value seq>
+    RetrieveAll: unit -> Async<seq<'value>>
     Save: 'key -> 'value -> Async<Result<unit,exn>> }

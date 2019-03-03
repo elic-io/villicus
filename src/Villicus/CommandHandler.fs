@@ -179,7 +179,7 @@ module Workflow =
                     | Error e -> 
                         e |> Error |> command.ReplyChannel.Reply
                         return! loop (version,state)
-                }
+            }
             load eventStore.ReadStream (EventId 0L) takeUpTo (streamIdString workflowId) |> Async.bind loop
 
     let createDispatcher observableBufferSize eventStore =

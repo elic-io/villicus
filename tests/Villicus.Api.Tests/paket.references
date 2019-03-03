@@ -1,6 +1,6 @@
 group Server
-  FSharp.Core
-  Thoth.Json.Net
+    FSharp.Core
+    Thoth.Json.Net
 group Test
-  xunit
+    xunit
 

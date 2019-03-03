@@ -2,8 +2,8 @@ namespace Villicus.Domain
 
 open Villicus.Common
 
-type TransitionId = uint32
-type StateId = uint32
+type TransitionId = uint64
+type StateId = uint64
 
 type Transition = {
     Id: TransitionId
@@ -263,22 +263,23 @@ module Workflow =
         | DropTransition c -> c.WorkflowId
 
     let internal nextId typeName mp workflowId =
-        let maxVal = System.UInt32.MaxValue
+        let maxVal = System.UInt64.MaxValue
+        let one = 1UL
         let getKeys () = mp |> Map.toArray |> Array.map fst
         match Map.containsKey maxVal mp with
-            | false ->  (getKeys () |> Array.last) + 1u |> Ok
+            | false ->  (getKeys () |> Array.last) + one |> Ok
             | true -> 
             let keys = getKeys () 
             // exclude the default initial state
             let minKey = keys |> Array.tail |> Array.min
-            match minKey > 1u with
-                | true -> minKey - 1u |> Ok
+            match minKey > one with
+                | true -> minKey - one |> Ok
                 | false ->
                 keys
                 |> Array.pairwise
                 // looking for first gap (a prior deleted item)
-                |> Array.tryFind (fun (a,b) -> b - a > 1u)
-                |> Option.map (fst >> ((+) 1u) )
+                |> Array.tryFind (fun (a,b) -> b - a > one)
+                |> Option.map (fst >> ((+) one) )
                 //TODO should this actually be MaxVal + 1 ?
                 |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName |> MaxCountExceededException.New workflowId  :> exn)
 
@@ -334,16 +335,16 @@ module Workflow =
     let createWorkflow (command: CreateWorkflowCommand) state =
         match state with
         | None -> 
-            let termState = State.New "Terminal State" 1u false
+            let termState = State.New "Terminal State" 1UL false
             [ WorkflowCreated { WorkflowId = command.WorkflowId; Name = command.Name }
               // initial state is added by creation event processing
               // this is because initial state is not an optional parameter
               StateAdded { WorkflowId = command.WorkflowId; StateId = termState.Id; StateName = termState.Name }
               TransitionAdded {
                     WorkflowId = command.WorkflowId
-                    TransitionId = 0u
+                    TransitionId = 0UL
                     TransitionName = "Transition"
-                    SourceState = 0u
+                    SourceState = 0UL
                     TargetState = termState.Id }
               TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = termState.Id } ]
             |> Ok
@@ -451,7 +452,7 @@ module Workflow =
         |> bindExists command.WorkflowId
 
     let inline internal initialStateError command errMsg x =
-        match command.StateId <> 0u with
+        match command.StateId <> 0UL with
           | true -> Ok x
           | false -> InitialStateException(errMsg,command.WorkflowId) :> exn |> Error
 
@@ -546,7 +547,7 @@ module Workflow =
 
     let evolve (state:Workflow) event : Workflow =
         let createNew workflowId name =
-            let initialState = State.New "Initial State" 0u false
+            let initialState = State.New "Initial State" 0UL false
             let initialVersion = Version 0UL
             { WorkflowId = workflowId
               Version = initialVersion

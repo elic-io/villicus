@@ -24,3 +24,17 @@ let ``round trip WorkflowId`` () =
     wid |> WorkflowId.Encoder |> WorkflowId.Decoder ""
     |> Result.inject (fun widResult -> Assert.Equal (wid, widResult))
     |> Result.injectError (fun (msg,_) -> msg |> exn |> raise)
+
+[<Fact>]
+let ``round trip WorkflowModel`` () =
+    CreateWorkflowCommand(System.Guid.NewGuid() |> WorkflowId, "Test WorkflowModel Serialization")
+    |> CreateWorkflow
+    |> Workflow.handle <| None
+    |> Result.map(List.fold Workflow.evolve None)
+    |> Result.map(Option.map(fun wfm ->
+        wfm |> WorkflowModel.Encoder |> Encode.toString 4
+        |> Decode.fromString WorkflowModel.Decoder
+        |> Result.inject (fun wfmResult -> Assert.Equal (wfm, wfmResult))
+        |> Result.injectError (fun e -> e |> exn |> raise)
+        |> ignore
+        ))

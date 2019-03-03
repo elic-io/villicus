@@ -27,5 +27,5 @@ module MemoryRepository =
     let create<'a,'b> () =
         let store = ConcurrentDictionary<'a,'b> ()
         { Retrieve = readItem store
-          RetrieveAll = store.Values |> Seq.map id |> Async.result
+          RetrieveAll = fun () -> store.Values |> Seq.map id |> Async.result
           Save = addOrUpdateItem store }
