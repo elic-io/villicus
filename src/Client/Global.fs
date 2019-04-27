@@ -1,14 +1,13 @@
 module Global
 
 type Page =
-    | Home
-    | Counter
     | About
     | ListWorkflows
+    | WorkflowPage of Villicus.Domain.WorkflowId
 
 let toHash page =
     match page with
     | About -> "#about"
-    | Counter -> "#counter"
-    | Home -> "#home"
     | ListWorkflows -> "#workflows"
+    | WorkflowPage (Villicus.Domain.WorkflowId wfid) -> wfid.ToString() |> sprintf "#workflow-%s"
+ 

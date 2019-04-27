@@ -4,17 +4,21 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Global to the app -->
+    <Compile Include="../Villicus/Common.fs" />
+    <Compile Include="../Villicus/Workflow.fs" />
+    <Compile Include="../Villicus.Api/Serialize.fs" />
     <Compile Include="Global.fs" />
     <!-- Info -->
     <Compile Include="Info/View.fs" />
     <!-- ListWorkflows -->
-    <Compile Include="ListWorkflows/Util.fs" />
-    <Compile Include="../Villicus/Common.fs" />
-    <Compile Include="../Villicus/Workflow.fs" />
+    <!-- <Compile Include="ListWorkflows/Util.fs" /> -->
     <Compile Include="ListWorkflows/Types.fs" />
-    <Compile Include="../Villicus.Api/Serialize.fs" />
     <Compile Include="ListWorkflows/State.fs" />
     <Compile Include="ListWorkflows/View.fs" />
+    <!-- WorkflowEditor -->
+    <Compile Include="WorkflowEditor/Types.fs" />
+    <Compile Include="WorkflowEditor/State.fs" />
+    <Compile Include="WorkflowEditor/View.fs" />
     <!-- Navbar -->
     <Compile Include="Navbar/View.fs" />
     <!-- App -->

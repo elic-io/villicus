@@ -24,7 +24,7 @@ let menuItem label page currentPage =
             Href (toHash page) ]
           [ str label ] ]
 
-let menu currentPage =
+let menu currentPage openWorkflows =
   aside
     [ ClassName "menu" ]
     [ p
@@ -41,6 +41,8 @@ let root model dispatch =
     match page with
     | Page.About -> Info.View.root
     | ListWorkflows -> ListWorkflows.View.root model.ListWorkflows (ListWFMsg >> dispatch)
+    | WorkflowPage wfid -> 
+      WorkflowEditor.View.root (Map.find wfid model.OpenWorkflows) (WorkflowMsg >> dispatch)
 
   div
     []
@@ -53,7 +55,7 @@ let root model dispatch =
                 [ ClassName "columns" ]
                 [ div
                     [ ClassName "column is-3" ]
-                    [ menu model.CurrentPage ]
+                    [ menu model.CurrentPage model.OpenWorkflows ]
                   div
                     [ ClassName "column" ]
                     [ pageHtml model.CurrentPage ] ] ] ] ]
