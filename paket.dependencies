@@ -1,4 +1,4 @@
-version 5.196.2
+version 5.215
 source https://api.nuget.org/v3/index.json
 storage: none
 clitool dotnet-fake
@@ -15,9 +15,21 @@ group Server
   nuget suave
   nuget System.Reactive
   nuget Thoth.Json.Net
-  # github haf/YoLo Yolo.fs
+  github haf/YoLo YoLo.fs
   nuget Fable.JsonConverter
   # nuget Microsoft.Extensions.Caching.Memory
+
+group Akka
+  source https://api.nuget.org/v3/index.json
+  source https://www.nuget.org/api/v2
+  framework: netcoreapp2.2
+  storage: none
+
+  nuget FSharp.Core ~> 4.5.0 redirects: force
+  nuget Akka
+  nuget Akka.Fsharp
+  nuget Akka.Persistence
+  nuget Akka.Persistence.FSharp
 
 group Client
   source https://api.nuget.org/v3/index.json
