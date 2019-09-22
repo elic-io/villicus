@@ -1,4 +1,4 @@
-﻿module CommandHandlerTests
+module CommandHandlerTests
 
 open System
 open Xunit
@@ -33,7 +33,7 @@ let processResult checkModel = function
         |> ignore
     | Error _ -> ()
 
-let resultCmd r cmd = ResultCommand.New r cmd |> ResultCommand
+let resultCmd r cmd = ResultCommand.newCmd r cmd |> ResultCommand
 
 let postAndReply (agent:WorkflowAgent) cmd = 
     agent.PostAndReply(fun r -> resultCmd r cmd)
@@ -138,7 +138,7 @@ let createJourneyFixture<'a> workflow =
       Agent = Journey.start dataStore (fun () -> workflow) broadcastSA guid }
 
 let postAndReplyJ<'a> (agent:JourneyAgent<'a>) cmd = 
-    agent.PostAndReply(fun r -> ResultCommand.New r cmd)
+    agent.PostAndReply(fun r -> ResultCommand.newCmd r cmd)
     |> Result.injectError(fun e -> raise e)
 
 let processResultJ (checkModel:JourneyModel<'a> -> unit) = function

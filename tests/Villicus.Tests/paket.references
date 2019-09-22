@@ -2,4 +2,6 @@ group Server
     FSharp.Core
     Thoth.Json.Net
 group Test
+    Microsoft.NET.Test.Sdk
     xunit
+    xunit.runner.visualstudio
