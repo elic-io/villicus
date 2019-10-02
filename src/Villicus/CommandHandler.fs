@@ -26,17 +26,13 @@ type ResultCommand<'command,'state,'error> = {
   //      ReplyChannel = replyChannel }
 
 module ResultCommand =
-    let inline newCmd replyChannel command = {
+    let inline newCmd command replyChannel = {
         Command = command
         ReplyChannel = replyChannel }
 
 type ResultCommandStream<'command,'event,'error> = {
     Command: 'command
     ReplyChannel: AsyncReplyChannel<Result<int64 * 'event list,'error>> }
-  with
-    static member New replyChannel command = {
-        Command = command
-        ReplyChannel = replyChannel }
 
 type WFCommand<'command,'event,'aggregateId,'state,'error> =
 | GetState of aggregateId:'aggregateId * version:System.Int64 * replyChannel:AsyncReplyChannel<Result<'state,'error>>
@@ -44,6 +40,16 @@ type WFCommand<'command,'event,'aggregateId,'state,'error> =
 | ReadStream of ReadStream<'aggregateId,'event,'error>
 | ResultCommand of ResultCommand<'command,'state,'error>
 | ResultCommandStream of ResultCommandStream<'command,'event,'error>
+
+module WFCommand =
+    let inline newCmd command replyChannel = ResultCommand { Command = command; ReplyChannel = replyChannel }
+    let inline newCommandStream command replyChannel = ResultCommandStream { Command = command; ReplyChannel = replyChannel }
+    let inline newReadStream aggregateId firstEventId bufferSize replyChannel =
+        { AggregateId = aggregateId
+          FirstEventId = firstEventId
+          BufferSize = bufferSize
+          ReplyChannel = replyChannel }
+        |> ReadStream
 
 type VersionType =
 | WorkflowVersion of Version
@@ -72,6 +78,9 @@ module Common =
             | Some n ->
                 return! stream n }
         stream startVersion
+
+    let getState aggregateId version replyChannel =
+        GetState (aggregateId,version,replyChannel)
 
 
 module Workflow =

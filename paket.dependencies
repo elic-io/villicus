@@ -1,4 +1,4 @@
-version 5.196.2
+version 5.216
 source https://api.nuget.org/v3/index.json
 storage: none
 clitool dotnet-fake
@@ -13,6 +13,8 @@ group Server
   nuget Newtonsoft.Json
   nuget suave
   nuget System.Reactive
+  nuget Saturn
+  nuget Thoth.Json.Giraffe
   nuget Thoth.Json.Net ~> 2
   github haf/YoLo YoLo.fs
   nuget Fable.JsonConverter

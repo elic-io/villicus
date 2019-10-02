@@ -33,11 +33,8 @@ let processResult checkModel = function
         |> ignore
     | Error _ -> ()
 
-let resultCmd r cmd = ResultCommand.newCmd r cmd |> ResultCommand
-
-let postAndReply (agent:WorkflowAgent) cmd = 
-    agent.PostAndReply(fun r -> resultCmd r cmd)
-    |> Result.injectError (fun e -> raise e)
+let inline postAndReply (agent:WorkflowAgent) =
+    WFCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
 
 let workflowCreation agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
     CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
@@ -137,9 +134,8 @@ let createJourneyFixture<'a> workflow =
       Workflow = workflow
       Agent = Journey.start dataStore (fun () -> workflow) broadcastSA guid }
 
-let postAndReplyJ<'a> (agent:JourneyAgent<'a>) cmd = 
-    agent.PostAndReply(fun r -> ResultCommand.newCmd r cmd)
-    |> Result.injectError(fun e -> raise e)
+let postAndReplyJ<'a> (agent:JourneyAgent<'a>) = 
+    ResultCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
 
 let processResultJ (checkModel:JourneyModel<'a> -> unit) = function
     | Ok (_,j) -> 
