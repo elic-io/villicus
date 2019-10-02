@@ -1,4 +1,4 @@
-﻿namespace Villicus
+namespace Villicus
 
 module Serialization =
     open Villicus.Domain
@@ -162,7 +162,7 @@ module Serialization =
         |> Encode.object
 
     type WorkflowCommand with
-      static member Decoder : Decode.Decoder<WorkflowCommand> =
+      static member Decoder : Decoder<WorkflowCommand> =
         let decodeCreate commandType =
           Decode.map2 
             (fun workflowId name -> CreateWorkflowCommand(workflowId,name) |> commandType)

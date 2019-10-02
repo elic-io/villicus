@@ -3,9 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.2</TargetFramework>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="YoLo.fs" />
+    <Compile Include="../../paket-files/server/haf/YoLo/YoLo.fs" />
     <Compile Include="SerializeTests.fs" />
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,5 @@
-group Server
+group Test
   FSharp.Core
   Thoth.Json.Net
-group Test
   xunit
-
+  xunit.runner.visualstudio

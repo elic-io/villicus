@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Observable.fs" />
-    <Compile Include="../../paket-files/haf/YoLo/YoLo.fs" />
+    <Compile Include="../../paket-files/server/haf/YoLo/YoLo.fs" />
     <Compile Include="ResultBuilder.fs" />
     <Compile Include="Common.fs" />
     <Compile Include="Persistence.fs" />

@@ -5,7 +5,7 @@
     <TargetFramework>netcoreapp2.2</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\paket-files\haf\YoLo\YoLo.fs" />
+    <Compile Include="..\..\paket-files\server\haf\YoLo\YoLo.fs" />
     <Compile Include="Serialize.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
