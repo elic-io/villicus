@@ -8,7 +8,7 @@ module MemoryEventStore =
     /// It's inefficient
     /// It also only supports int32 event addresses
     /// But that's OK it's really just a mock/sample implementation for testing and development
-    let readStream (store:ConcurrentDictionary<'a,'b list>) streamId version count =
+    let private readStream (store:ConcurrentDictionary<'a,'b list>) streamId version count =
         let takeUpTo mx = 
             match mx with 
             | 0 -> id 
@@ -31,10 +31,11 @@ module MemoryEventStore =
                     | false -> nextEventCandidate |> int64 |> Some
             (events, int64 lastEventNumber, nextEventNumber) |> Async.result
 
-    let appendToStream (store: ConcurrentDictionary<'a,'b list>) streamId (expectedVersion:int64) newEvents = 
-        // AddOrUpdate returns the same type as input, so we have to raise the exception to
-        // then catch it and pass the error type back out
-        // unless we wanted to store Result type, which we don't
+    let private appendToStream (store: ConcurrentDictionary<'a,'b list>) streamId (expectedVersion:int64) newEvents = 
+        // AddOrUpdate returns the same type as input,
+        //     so we have to raise the exception to then catch it and pass the error type back out,
+        //   unless we wanted to store Result type, which we don't
+        // Once again, this is really just a mock/sample implementation for testing and development
         let addValueFactory _ =
             if expectedVersion = 0L then Seq.toList newEvents
             else raise (VersionMisMatchException (expectedVersion,0L))

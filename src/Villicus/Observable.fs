@@ -34,8 +34,8 @@ module Observable =
                             let! msg = inbox.Receive()
                             publish msg } ),
                     token)
-        let obs = 
-            { new IObservable<'T> with 
+        let obs =
+            { new IObservable<'T> with
                 member __.Subscribe(obs) =
                     let key1 =
                         lock subscribers (fun () ->

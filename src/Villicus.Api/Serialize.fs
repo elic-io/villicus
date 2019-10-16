@@ -1,6 +1,7 @@
 ﻿namespace Villicus
 
 module Serialization =
+    open Api.ViewTypes
     open Villicus.Domain
     #if FABLE_COMPILER
     open Thoth.Json
@@ -371,6 +372,18 @@ module Serialization =
     type DuplicateTransitionNameException with
         static member Encoder (x:DuplicateTransitionNameException) = Encode.Auto.toString (4, x,true)
 
+
+    type WorkflowMetaListItem with
+        static member Decoder =
+            Decode.map2 (fun workflowId name ->
+                    { Api.ViewTypes.WorkflowMetaListItem.WorkflowId = workflowId
+                      Api.ViewTypes.WorkflowMetaListItem.Name = name })
+                 (Decode.field "workflowId" WorkflowId.Decoder)
+                 (Decode.field "name" Decode.string)
+        static member Encoder (x:WorkflowMetaListItem) =
+            Encode.object 
+                [ "workflowId", WorkflowId.Encoder x.WorkflowId
+                  "name", Encode.string x.Name ]
 
 
     //type WorkflowCommand with

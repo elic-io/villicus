@@ -134,26 +134,26 @@ module Workflow =
         |> Async.map(Ok >> rdStrm.ReplyChannel.Reply) |> Async.Start
 
     let start (eventStore:Persistence.StreamDataStore<string,WorkflowEvent>) sendToObservers workflowId =
-        Agent.Start<| fun inbox ->
-            let rec loop (version,state) = async {
-                let getResult reply eventResult = async {
-                  match eventResult with
-                    | Ok eList ->
-                        let events = eList |> Seq.ofList
-                        match! save eventStore.AppendToStream workflowId version events with
-                            | Ok (_:unit) ->
-                                let newState = Seq.fold Workflow.evolve state events
-                                let newVersion = version + (Seq.length events |> int64)
-                                (newVersion,newState,eList) |> Ok |> reply
-                                events |> Seq.iter sendToObservers
-                                return (newVersion, newState)
-                            | Error e ->
-                                e |> Error |> reply
-                                return (version,state)
-                    | Error e -> 
+        let getResult version state reply eventResult = async {
+          match eventResult with
+            | Ok eList ->
+                let events = eList |> Seq.ofList
+                match! save eventStore.AppendToStream workflowId version events with
+                    | Ok (_:unit) ->
+                        let newState = Seq.fold Workflow.evolve state events
+                        let newVersion = version + (Seq.length events |> int64)
+                        (newVersion,newState,eList) |> Ok |> reply
+                        events |> Seq.iter sendToObservers
+                        return (newVersion, newState)
+                    | Error e ->
                         e |> Error |> reply
-                        return (version,state) }
-
+                        return (version,state)
+            | Error e -> 
+                e |> Error |> reply
+                return (version,state) }
+        Agent.Start <| fun inbox ->
+            let rec loop (version,state) = async {
+                let getResult = getResult version state
                 match! inbox.Receive() with
                 | GetState ((WorkflowId workflowId),ver,replyChannel) ->
                     match ver = version || ver = 0L with
