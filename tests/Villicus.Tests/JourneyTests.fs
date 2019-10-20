@@ -9,7 +9,7 @@ let subject = Guid.NewGuid()
 let newJourneyId = Guid.NewGuid() |> JourneyId
 let testWorkflow =
     WorkflowTests.testWorkflow
-    |> WorkflowTests.processCmd (AddTransition (AddTransitionCommand(WorkflowTests.newWorkflowId,"Reactivate",1u,0u)))
+    |> WorkflowTests.processCmd (CommandAPI.addTransition WorkflowTests.newWorkflowId "Reactivate" 1u 0u)
     |> Result.bind(Result.ofOption (exn "workflow doesn't exist"))
 
 let lookup vwid =

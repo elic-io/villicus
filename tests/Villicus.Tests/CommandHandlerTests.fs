@@ -34,10 +34,12 @@ let processResult checkModel = function
     | Error _ -> ()
 
 let inline postAndReply (agent:WorkflowAgent) =
-    WFCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
+    (Result.mapError CommandCreationError.ToExn)
+    >> (Result.map WFCommand.newCmd)
+    >> (Result.bind agent.PostAndReply) >> Result.injectError raise
 
 let workflowCreation agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent
     |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))
     cts.Cancel() // stops sending events to observers
@@ -56,7 +58,7 @@ let ``dispatcher workflow creation`` () =
 
 
 let getWorkflowState agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent |> ignore
     agent.PostAndReply(fun r -> GetState (workflowId,0L,r))
     |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))
@@ -77,7 +79,7 @@ let ``dispatcher get workflow state`` () =
 
 
 let getWorkflowEvents agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent |> ignore
     agent.PostAndReply(fun r -> 
         ReadStream.New<WorkflowEvent> workflowId 0L 2 r |> ReadStream)
@@ -154,7 +156,7 @@ let journeyCreation agent (cts:System.Threading.CancellationTokenSource) journey
 let ``agent journey creation`` () =
     let wfName = "workflow for agent journey creation"
     let af = createAgentFixture ()
-    CreateWorkflowCommand (af.WorkflowId, wfName) |> CreateWorkflow
+    CommandAPI.createWorkflow af.WorkflowId wfName
     |> postAndReply af.Agent |> ignore
     af.Agent.PostAndReply(fun r -> GetState (af.WorkflowId,0L,r))
     |> processResult (fun wfm -> 
@@ -187,11 +189,11 @@ let ``dispatcher journey creation`` () =
             |> ignore
         | _ -> ())
 
-    CreateWorkflowCommand (workflowId, wfName) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId wfName
     |> postAndReply wfDispatcher.Agent 
     |> Result.injectError(fun e -> raise e)
     |> ignore
-    workflowId |> PublishWorkflow
+    workflowId |> CommandAPI.publishWorkflow
     |> postAndReply wfDispatcher.Agent
     |> Result.injectError(fun e -> raise e)
     |> ignore

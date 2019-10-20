@@ -55,54 +55,13 @@ and StateEvent = { WorkflowId: WorkflowId; StateId: StateId }
 and TransitionEditEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId; TransitionName: string; SourceState: StateId; TargetState: StateId }
 and TransitionDroppedEvent = { WorkflowId: WorkflowId; TransitionId: TransitionId }
 
-
-type CreateWorkflowCommand (workflowId, name) =
-    do
-        requireStringVal "name" name
-    member __.WorkflowId = workflowId
-    member __.Name = name
-
-type CopyWorkflowCommand (source, target, copyName) =
-    do
-        requireStringVal "copyName" copyName
-    member __.Source = source
-    member __.Target = target
-    member __.CopyName = copyName
-
-type AddStateCommand (workflowId, stateName) =
-    do
-        requireStringVal "state name" stateName
-    member __.WorkflowId = workflowId
-    member __.StateName = stateName
-
-type EditStateCommand (workflowId, stateId, stateName) =
-    inherit AddStateCommand(workflowId, stateName)
-    member __.StateId = stateId
-
-type AddTransitionCommand (workflowId, transitionName, sourceState, targetState) = 
-    do
-        requireStringVal "transition name" transitionName
-        match sourceState = targetState with
-            | true ->
-            let errMsg = targetState |> sprintf "targetState must be different than initialState (%O)"
-            raise (System.ArgumentException(errMsg,"targetState"))
-            | false -> ()
-    member __.WorkflowId = workflowId
-    member __.TransitionName = transitionName
-    member __.SourceState = sourceState
-    member __.TargetState = targetState
-
-type EditTransitionCommand (workflowId, transitionId, transitionName, initialState, targetState) = 
-    inherit AddTransitionCommand (workflowId, transitionName, initialState, targetState)
-    member __.TransitionId = transitionId
-
 type WorkflowCommand =
 | CreateWorkflow of CreateWorkflowCommand
 | RenameWorkflow of CreateWorkflowCommand
 | CopyWorkflow of CopyWorkflowCommand
 | PublishWorkflow of WorkflowId
-| RePublishWorkflow of VersionedWorkflowId 
 | WithdrawWorkflow of VersionedWorkflowId
+| RePublishWorkflow of VersionedWorkflowId
 | AddState of AddStateCommand
 | RenameState of EditStateCommand
 | DropState of StateCommand
@@ -111,8 +70,86 @@ type WorkflowCommand =
 | AddTransition of AddTransitionCommand
 | EditTransition of EditTransitionCommand
 | DropTransition of DropTransitionCommand
+and CreateWorkflowCommand = private { WorkflowId : WorkflowId; Name : string }
+and CopyWorkflowCommand = private { Source: VersionedWorkflowId; Target: WorkflowId; CopyName: string }
+and AddStateCommand = private { WorkflowId: WorkflowId; StateName: string }
+and EditStateCommand = private { WorkflowId: WorkflowId; StateId: StateId; StateName: string }
 and StateCommand = { WorkflowId: WorkflowId; StateId: StateId }
+and AddTransitionCommand = private { WorkflowId: WorkflowId; TransitionName: string; SourceState: StateId; TargetState: StateId }
+and EditTransitionCommand = private { WorkflowId: WorkflowId; TransitionId: TransitionId; TransitionName: string; SourceState: StateId; TargetState: StateId }
 and DropTransitionCommand = { WorkflowId: WorkflowId; TransitionId: TransitionId }
+
+type CommandCreationError =
+| NullArgument of string
+| CantTargetSelf of string
+with
+  static member ToExn =
+    function
+    | NullArgument s -> System.ArgumentNullException s :> exn
+    | CantTargetSelf s -> System.ArgumentException s :> exn
+
+module CommandHelpers =
+    let private requireStringVal (fieldName:string) value f =
+        match System.String.IsNullOrWhiteSpace value with
+            | true -> NullArgument fieldName |> Error
+            | false -> f () |> Ok
+    let private checkDifferentStates sourceState targetState x =
+        match sourceState = targetState with
+        | true ->
+            targetState
+            |> sprintf "targetState must be different than sourceState (%O)"
+            |> CantTargetSelf
+            |> Error
+        | false -> Ok x
+    let newCreateWorkflowCommand workflowId name =
+        fun () -> { WorkflowId = workflowId; Name = name }
+        |> requireStringVal "name" name
+    let createWorkflowCommand (c:CreateWorkflowCommand) = (c.WorkflowId, c.Name)
+    let newCopyWorkflowCommand source target copyName =
+        fun () -> { Source = source; Target = target; CopyName = copyName }
+        |> requireStringVal "copyName" copyName
+    let copyWorkflowCommand (c:CopyWorkflowCommand) = (c.Source, c.Target, c.CopyName)
+    let newAddStateCommand workflowId stateName =
+        fun () -> { WorkflowId = workflowId; StateName = stateName }
+        |> requireStringVal "state name" stateName
+    let addStateCommand (c:AddStateCommand) = (c.WorkflowId, c.StateName)
+    let newEditStateCommand workflowId stateId stateName =
+        fun () -> { WorkflowId = workflowId; StateId = stateId; StateName = stateName }
+        |> requireStringVal "state name" stateName
+    let editStateCommand (c:EditStateCommand) = (c.WorkflowId, c.StateId, c.StateName)
+    let newStateCommand workflowId stateId : Result<StateCommand,CommandCreationError> =
+        Ok { WorkflowId = workflowId; StateId = stateId }
+    let stateCommand (c:StateCommand) = (c.WorkflowId, c.StateId)
+    let newAddTransitionCommand workflowId transitionName sourceState targetState =
+        fun () -> { WorkflowId = workflowId; TransitionName = transitionName; SourceState = sourceState; TargetState = targetState }
+        |> requireStringVal "transition name" transitionName
+        |> Result.bind (checkDifferentStates sourceState targetState)
+    let addTransitionCommand (c:AddTransitionCommand) = (c.WorkflowId, c.TransitionName, c.SourceState, c.TargetState)
+    let newEditTransitionCommand workflowId transitionId transitionName sourceState targetState = 
+        fun () -> { WorkflowId = workflowId; TransitionId = transitionId; TransitionName = transitionName; SourceState = sourceState; TargetState = targetState }
+        |> requireStringVal "transition name" transitionName
+        |> Result.bind (checkDifferentStates sourceState targetState)
+    let editTransitionCommand (c:EditTransitionCommand) = (c.WorkflowId, c.TransitionId, c.TransitionName, c.SourceState, c.TargetState)
+    let newDropTransitionCommand workflowId transitionId : Result<DropTransitionCommand,CommandCreationError>=
+        Ok { WorkflowId = workflowId; TransitionId = transitionId }
+    let dropTransitionCommand (c:DropTransitionCommand) = (c.WorkflowId, c.TransitionId)
+
+module CommandAPI =
+    open CommandHelpers
+    let createWorkflow workflowId = newCreateWorkflowCommand workflowId >> (Result.map CreateWorkflow)
+    let renameWorkflow workflowId = newCreateWorkflowCommand workflowId >> (Result.map RenameWorkflow)
+    let copyWorkflow source target = newCopyWorkflowCommand source target >> (Result.map CopyWorkflow)
+    let publishWorkflow workflowId : Result<WorkflowCommand,CommandCreationError> = workflowId |> PublishWorkflow |> Ok
+    let withdrawWorkflow versionedWorkflowId : Result<WorkflowCommand,CommandCreationError> = versionedWorkflowId |> WithdrawWorkflow |> Ok
+    let rePublishWorkflow versionedWorkflowId : Result<WorkflowCommand,CommandCreationError> = versionedWorkflowId |> RePublishWorkflow |> Ok
+    let addState workflowId = newAddStateCommand workflowId >> (Result.map AddState)
+    let renameState workflowId stateId = newEditStateCommand workflowId stateId >> (Result.map RenameState)
+    let addTransition workflowId transitionName sourceState = newAddTransitionCommand workflowId transitionName sourceState >> (Result.map AddTransition)
+    let editTransition workflowId transitionId transitionName sourceState = newEditTransitionCommand workflowId transitionId transitionName sourceState >> (Result.map EditTransition)
+    let dropState workflowId = newStateCommand workflowId >> (Result.map DropState)
+    let setTerminalState workflowId = newStateCommand workflowId >> (Result.map SetTerminalState)
+    let unSetTerminalState workflowId = newStateCommand workflowId >> (Result.map UnSetTerminalState)
+    let dropTransition workflowId = newDropTransitionCommand workflowId >> (Result.map DropTransition)
 
 type Problems = 
   { NoTerminalStates: bool
@@ -342,7 +379,7 @@ module Workflow =
               TransitionAdded {
                     WorkflowId = command.WorkflowId
                     TransitionId = 0u
-                    TransitionName = "Transition"
+                    TransitionName = "Initial Transition"
                     SourceState = 0u
                     TargetState = termState.Id }
               TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = termState.Id } ]
@@ -371,7 +408,7 @@ module Workflow =
                |> List.map (fun (_,s) -> StateAdded { WorkflowId = command.Target; StateId = s.Id; StateName = s.Name }))
               (model.Transitions |> Map.toList
                |> List.map (fun (_,t) -> 
-                 { WorkflowId = command.Target
+                 { TransitionEditEvent.WorkflowId = command.Target
                    TransitionId = t.Id
                    TransitionName = t.Name
                    SourceState = t.SourceState
@@ -430,7 +467,7 @@ module Workflow =
             nextStateId s.WorkflowId s
             |> Result.bind (fun n ->
                 let stateEvent =
-                  { WorkflowId = command.WorkflowId
+                  { StateEditEvent.WorkflowId = command.WorkflowId
                     StateId = n
                     StateName = command.StateName }
                 [ StateAdded stateEvent ]
@@ -480,7 +517,7 @@ module Workflow =
             s |> ifStateExists command.StateId events
         |> bindExists command.WorkflowId
 
-    let internal transitionCheck workflowModel transEvent x =
+    let internal transitionCheck workflowModel (transEvent:TransitionEditEvent) x =
         let transitionNameExists _ (v:Transition) =
             match v.Name = transEvent.TransitionName with | true -> Some v | false -> None
         let transitionPathExists _ (v:Transition) =
@@ -496,7 +533,7 @@ module Workflow =
             nextTransitionId command.WorkflowId s
             |> Result.bind (fun n ->
                 let editEvent = {
-                    WorkflowId = command.WorkflowId
+                    TransitionEditEvent.WorkflowId = command.WorkflowId
                     TransitionId = n
                     TransitionName = command.TransitionName
                     SourceState = command.SourceState 
@@ -513,7 +550,7 @@ module Workflow =
     let editTransition (command: EditTransitionCommand) =
         fun s ->
             let editEvent = {
-                WorkflowId = command.WorkflowId
+                TransitionEditEvent.WorkflowId = command.WorkflowId
                 TransitionId = command.TransitionId
                 TransitionName = command.TransitionName
                 SourceState = command.SourceState 

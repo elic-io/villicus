@@ -92,21 +92,25 @@ module Task =
         return! f x' }
 
 let processCommand =
-    WFCommand.newCommandStream
-    >> wfDispatcher.PostAndAsyncReply
-    >> Async.StartAsTask
-    >> Task.map(Result.map2
-        (fun (eventIndex,eventList) ->
-            (eventList
-            |> List.map (WorkflowEvent.Encoder)
-            |> Encode.list
-            |> Encode.toString 4
-            |> Successful.CREATED)     
-            >=> (eventIndex |> string |>setHttpHeader "Etag"))
-        (fun error ->
-            match error with
-            | :? DuplicateWorkflowIdException as e -> Duplicate e
-            | _ -> Unknown error))
+    Result.map (
+        WFCommand.newCommandStream
+        >> wfDispatcher.PostAndAsyncReply
+        >> Async.StartAsTask
+        >> Task.map (Result.map2
+            (fun (eventIndex,eventList) ->
+                (eventList
+                |> List.map (WorkflowEvent.Encoder)
+                |> Encode.list
+                |> Encode.toString 4
+                |> Successful.CREATED)     
+                >=> (eventIndex |> string |> setHttpHeader "Etag"))
+            (fun error ->
+                match error with
+                | :? DuplicateWorkflowIdException as e -> Duplicate e
+                | _ -> Unknown error)))
+    >> function
+    | Ok x -> x
+    | Error e -> e |> CommandCreationError.ToExn |> BadRequest |> Error |> Task.FromResult
 
 let postText (ctx:HttpContext) =
     use body = new System.IO.StreamReader(ctx.Request.Body)
