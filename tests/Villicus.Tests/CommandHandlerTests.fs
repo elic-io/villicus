@@ -8,7 +8,7 @@ open Villicus
 open Villicus.Persistence
 open Villicus.CommandHandlers
 
-type WorkflowAgent = Agent<WFCommand<WorkflowCommand,WorkflowEvent,WorkflowId,int64*Workflow,exn>>
+type WorkflowAgent = Agent<WFCommand<WorkflowCommand,WorkflowEvent,WorkflowId,int64*Workflow,WorkflowError>>
 
 type AgentTestFixture = {
     CTS: System.Threading.CancellationTokenSource
@@ -34,9 +34,9 @@ let processResult checkModel = function
     | Error _ -> ()
 
 let inline postAndReply (agent:WorkflowAgent) =
-    (Result.mapError CommandCreationError.ToExn)
+    (Result.mapError CommandCreation)
     >> (Result.map WFCommand.newCmd)
-    >> (Result.bind agent.PostAndReply) >> Result.injectError raise
+    >> (Result.bind agent.PostAndReply) // >> Result.injectError raise
 
 let workflowCreation agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
     CommandAPI.createWorkflow workflowId testWFname
@@ -93,8 +93,7 @@ let getWorkflowEvents agent (cts:System.Threading.CancellationTokenSource) workf
         Assert.Equal(2,List.length eventList)
         Assert.Equal(4L,lastEventId)
         Assert.Equal(None,nextEventId))
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
     cts.Cancel() // stops sending events to observers
 
 [<Fact>]
@@ -115,7 +114,7 @@ let ``dispatcher get workflow events`` () =
 
 
 
-type JourneyAgent<'a> = Agent<ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>>
+type JourneyAgent<'a> = Agent<ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,JourneyError>>
 
 type JourneyTestFixture<'a> = {
     CTS: System.Threading.CancellationTokenSource
@@ -137,14 +136,14 @@ let createJourneyFixture<'a> workflow =
       Agent = Journey.start dataStore (fun () -> workflow) broadcastSA guid }
 
 let postAndReplyJ<'a> (agent:JourneyAgent<'a>) = 
-    ResultCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
+    ResultCommand.newCmd >> agent.PostAndReply // >> Result.injectError raise
 
 let processResultJ (checkModel:JourneyModel<'a> -> unit) = function
     | Ok (_,j) -> 
         match j with
         | ActiveJourney jm | TerminatedJourney jm -> checkModel jm
         | NonExistingJourney _ -> raise (exn "journey does not exist")
-    | Error e -> raise e
+    | Error e -> e.ToString() |> exn |> raise
 
 let journeyCreation agent (cts:System.Threading.CancellationTokenSource) journeyId versionedWorkflowId subject =
     { JourneyId = journeyId; VersionedWorkflowId = versionedWorkflowId; Subject = subject } |> CreateJourney
@@ -190,11 +189,8 @@ let ``dispatcher journey creation`` () =
         | _ -> ())
 
     CommandAPI.createWorkflow workflowId wfName
-    |> postAndReply wfDispatcher.Agent 
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> postAndReply wfDispatcher.Agent
+    |> raiseIfError
     workflowId |> CommandAPI.publishWorkflow
     |> postAndReply wfDispatcher.Agent
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
-
+    |> raiseIfError

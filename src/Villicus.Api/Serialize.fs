@@ -355,30 +355,6 @@ module Serialization =
               "directDescendents", x.DirectDescendents |> setToArray WorkflowId.Encoder
               "ancestors", x.Ancestors |> Seq.toArray |> Array.map VersionedWorkflowId.Encoder |> Encode.array ]
 
-    type MaxCountExceededException with
-        static member Encoder (x:MaxCountExceededException) = Encode.Auto.toString (4, x,true)
-    type DuplicateWorkflowIdException with
-        static member Encoder (x:DuplicateWorkflowIdException) = Encode.Auto.toString (4, x,true)
-    type NonExistantWorkflowException with
-        static member Encoder (x:NonExistantWorkflowException) = Encode.Auto.toString (4, x,true)
-    type UndefinedVersionException with
-        static member Encoder (x:UndefinedVersionException) = Encode.Auto.toString (4, x,true)
-    type InvalidWorkflowException with
-        static member Encoder (x:InvalidWorkflowException) = Encode.Auto.toString (4, x,true)
-    type DuplicateStateNameException with
-        static member Encoder (x:DuplicateStateNameException) = Encode.Auto.toString (4, x,true)
-    type UndefinedStateException with
-        static member Encoder (x:UndefinedStateException) = Encode.Auto.toString (4, x,true)
-    type InitialStateException with
-        static member Encoder (x:InitialStateException) = Encode.Auto.toString (4, x,true)
-    type UndefinedTransitionException with
-        static member Encoder (x:UndefinedTransitionException) = Encode.Auto.toString (4, x,true)
-    type DuplicateTransitionException with
-        static member Encoder (x:DuplicateTransitionException) = Encode.Auto.toString (4, x,true)
-    type DuplicateTransitionNameException with
-        static member Encoder (x:DuplicateTransitionNameException) = Encode.Auto.toString (4, x,true)
-
-
     type WorkflowMetaListItem with
         static member Decoder =
             Decode.map2 (fun workflowId name ->

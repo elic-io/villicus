@@ -44,25 +44,31 @@ type JourneyException (message, journeyId) =
     member __.JourneyId = journeyId
     static member New i m = JourneyException(m,i)
 
-type DuplicateJourneyIdException (journeyId) = 
-    inherit JourneyException("already exists",journeyId)
+type JourneyError =
+    | UnknownJourneyError of JourneyId * exn
+    | DuplicateJourneyId of JourneyId
+    | NonExistant
+    | NonExistantJourneyId of JourneyId
+    | InvalidTransition of InvalidTransitionError
+    | UndefinedTransition of UndefinedTransitionError
+    | UndefinedVersion of VersionedWorkflowId
+and InvalidTransitionError = {
+    JourneyId: JourneyId
+    TransitionId: TransitionId
+    StateId: StateId }
 
-type NonExistantJourneyException (journeyId) =
-    inherit JourneyException("journey does not exist", journeyId)
-
-type InvalidTransitionException (message,journeyId,transitionId,stateId) =
-    inherit JourneyException(
-        seq { 
-            yield sprintf "%O is not valid from %O" transitionId stateId
-            if System.String.IsNullOrWhiteSpace message then () else
-                yield message }
-            |> String.concat ": "
-        , journeyId)
-    with
-    member __.TransitionId = transitionId
-    member __.StateId = stateId
-    new(journeyId,transitionId,stateId) =
-        InvalidTransitionException ("",journeyId,transitionId,stateId)
+module JourneyError =
+    let unknown journeyId e = UnknownJourneyError (journeyId,e)
+    let duplicateJourneyId = DuplicateJourneyId
+    let nonExistantJourneyId = NonExistantJourneyId
+    let invalidTransition journeyId transitionId stateId =
+        { JourneyId = journeyId
+          TransitionId = transitionId
+          StateId = stateId }
+        |> InvalidTransition
+    let undefinedTransition workflowId transitionId =
+        UndefinedTransition { WorkflowId = workflowId; UndefinedTransition = transitionId }
+    let undefinedVersion = UndefinedVersion
 
 module Journey =
 
@@ -84,24 +90,24 @@ module Journey =
                     JourneyCreationEvent.VersionedWorkflowId = command.VersionedWorkflowId
                     JourneyCreationEvent.Subject = command.Subject } |> JourneyCreated ]
                 |> Ok)
-        | _ -> DuplicateJourneyIdException(command.JourneyId) :> exn |> Error
+        | _ -> JourneyError.duplicateJourneyId command.JourneyId |> Error
 
     let toResult journeyId =
         function
-        | NonExistingJourney _ -> journeyId |> NonExistantJourneyException :> exn |> Error
+        | NonExistingJourney _ -> journeyId |> JourneyError.nonExistantJourneyId |> Error
         | ActiveJourney a -> Ok a 
         | TerminatedJourney t -> Ok t
 
     let internal bindJourneyState journeyId (f) = toResult journeyId >> Result.bind f
 
-    let transition<'t> (command: TransitionCommand) (workflow:WorkflowModel) : (Journey<'t> -> Result<JourneyEvent<'t> list,exn>) =
+    let transition<'t> (command: TransitionCommand) (workflow:WorkflowModel) : (Journey<'t> -> Result<JourneyEvent<'t> list,JourneyError>) =
         (fun (s:JourneyModel<'t>) ->
             Map.tryFind command.TransitionId workflow.Transitions
-            |> Result.ofOption (UndefinedTransitionException(workflow.WorkflowId,command.TransitionId) :> exn)
+            |> Result.ofOption (JourneyError.undefinedTransition workflow.WorkflowId command.TransitionId)
             |> Result.bind(fun transition ->
                 match s.CurrentState.Away.Contains command.TransitionId with
                   | false ->
-                    InvalidTransitionException(command.JourneyId,command.TransitionId,s.CurrentState.Id) :> exn |> Error
+                    JourneyError.invalidTransition command.JourneyId command.TransitionId s.CurrentState.Id |> Error
                   | true ->
                     let termState = Map.find transition.TargetState workflow.States
                     seq {
@@ -119,11 +125,11 @@ module Journey =
                     } |> Seq.toList |> Ok ))
         |> bindJourneyState command.JourneyId
 
-    let reActivate<'t> (command: TransitionCommand) workflow : (Journey<'t> -> Result<JourneyEvent<'t> list,exn>) =
+    let reActivate<'t> (command: TransitionCommand) workflow : (Journey<'t> -> Result<JourneyEvent<'t> list,JourneyError>) =
         fun (s:JourneyModel<'t>) ->
             match workflow.TerminalStates.Contains s.CurrentState.Id with
               | false ->
-                InvalidTransitionException(sprintf "current %O is not Terminal" s.CurrentState.Id,command.JourneyId,command.TransitionId,s.CurrentState.Id) :> exn |> Error
+                JourneyError.invalidTransition command.JourneyId command.TransitionId s.CurrentState.Id |> Error
               | true ->
                 transition command workflow (ActiveJourney s)
                 |> Result.map(List.append [ ReActivated command.JourneyId ])

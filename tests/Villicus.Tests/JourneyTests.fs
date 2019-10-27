@@ -9,8 +9,9 @@ let subject = Guid.NewGuid()
 let newJourneyId = Guid.NewGuid() |> JourneyId
 let testWorkflow =
     WorkflowTests.testWorkflow
-    |> WorkflowTests.processCmd (CommandAPI.addTransition WorkflowTests.newWorkflowId "Reactivate" 1u 0u)
-    |> Result.bind(Result.ofOption (exn "workflow doesn't exist"))
+    |> WorkflowTests.processCmd (CommandAPI.addTransition WorkflowTests.testWorkflowId "Reactivate" 1u 0u)
+    |> Result.bind(Result.ofOption NonExistant)
+    |> Result.mapError (fun _ -> "This shouldn't ever happen" |> exn |> JourneyError.unknown newJourneyId)
 
 let lookup vwid =
     testWorkflow
@@ -18,10 +19,9 @@ let lookup vwid =
         let v = w.VersionedWorkflowId
         match vwid = v with
           | true -> Ok w
-          | false -> UndefinedVersionException(v.Id,v.Version) :> exn |> Error)
-    //|> Result.mapError(fun e -> raise e)
+          | false -> JourneyError.undefinedVersion { Id = v.Id; Version = v.Version } |> Error)
 
-let createTest (workflow:Result<WorkflowModel,exn>) =
+let createTest (workflow:Result<WorkflowModel,JourneyError>) =
     workflow
     |> Result.bind(fun wf -> 
         let createCmd = { 
@@ -46,23 +46,21 @@ let ``create journey`` () =
             Assert.Equal(wf.InitialState,j.CurrentState)
             Assert.Equal(newJourneyId,j.JourneyId)
             Assert.Equal(wf.VersionedWorkflowId,j.Workflow)))
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``create journey fails when lookup fails`` () =
-    fun () ->
-        testWorkflow
-        |> Result.bind(fun wf -> 
-            let createCmd = { 
-                JourneyId = newJourneyId
-                VersionedWorkflowId = { wf.VersionedWorkflowId with Version = Version 77777UL }
-                Subject = subject }
-            Journey.createJourney lookup createCmd Journey.NewNonExisting)
-        |> Result.injectError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedVersionException>
-
+    testWorkflow
+    |> Result.bind(fun wf -> 
+        let createCmd = { 
+            JourneyId = newJourneyId
+            VersionedWorkflowId = { wf.VersionedWorkflowId with Version = Version 77777UL }
+            Subject = subject }
+        Journey.createJourney lookup createCmd Journey.NewNonExisting)
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an duplicate workflowId error"))
+        (fun e -> Assert.True(match e with | JourneyError.UndefinedVersion _ -> true | _ -> false))
+    |> ignore
 
 let testJourney =
     testWorkflow
@@ -86,32 +84,31 @@ let ``transition`` () =
     |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 0u })
     |> Result.bind(fun j ->
         match j with
-          | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> Error
-          | ActiveJourney _ -> "Journey is Active" |> exn |> Error
+          | NonExistingJourney _ -> Error JourneyError.NonExistant
+          | ActiveJourney _ -> "Journey is Active" |> exn |> JourneyError.unknown newJourneyId |> Error
           | TerminatedJourney t -> t |> Ok)
     |> Result.map(fun jm ->
         Assert.Equal(1u,jm.CurrentState.Id)
         Assert.True(jm.CurrentState.IsTerminal))
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``invalid transition that doesn't exist`` () =
-    fun () ->
-        testJourney
-        |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 57463u })
-        |> Result.injectError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedTransitionException>
+    testJourney
+    |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 57463u })
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedTransition error"))
+        (fun e -> Assert.True(match e with | JourneyError.UndefinedTransition _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``invalid transition`` () =
-    fun () ->
-        testJourney
-        |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 1u })
-        |> Result.injectError(fun e -> raise e)
-        |> ignore
-    |> expectExn<InvalidTransitionException>
+    testJourney
+    |> processCmd (TransitionCommand { JourneyId = newJourneyId; TransitionId = 1u })
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an InvalidTransition error"))
+        (fun e -> Assert.True(match e with | InvalidTransition _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``reactivate`` () =
@@ -120,20 +117,19 @@ let ``reactivate`` () =
     |> processCmd (ReActivate { JourneyId = newJourneyId; TransitionId = 1u })
     |> Result.bind(fun j ->
         match j with
-          | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> Error
+          | NonExistingJourney _ -> "Journey doesn't exist" |> exn |> JourneyError.unknown newJourneyId |> Error
           | ActiveJourney a -> a |> Ok 
-          | TerminatedJourney _ -> "Journey is Terminated" |> exn |> Error)
+          | TerminatedJourney _ -> "Journey is Terminated" |> exn |> JourneyError.unknown newJourneyId |> Error)
     |> Result.map(fun jm ->
         Assert.Equal(0u,jm.CurrentState.Id)
         Assert.False(jm.CurrentState.IsTerminal))
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``reactivate when active`` () =
-    fun () ->
-        testJourney
-        |> processCmd (ReActivate { JourneyId = newJourneyId; TransitionId = 1u })
-        |> Result.injectError(fun e -> raise e)
-        |> ignore
-    |> expectExn<InvalidTransitionException>
+    testJourney
+    |> processCmd (ReActivate { JourneyId = newJourneyId; TransitionId = 1u })
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an InvalidTransition error"))
+        (fun e -> Assert.True(match e with | InvalidTransition _ -> true | _ -> false))
+    |> ignore

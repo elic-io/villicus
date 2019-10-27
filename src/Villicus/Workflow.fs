@@ -161,30 +161,35 @@ type Problems =
         && (Set.isEmpty x.UnreachableStates)
         && (Set.isEmpty x.CannotReachAnyTerminalState)
 
-type WorkflowException (message, workflowId) = 
+type UndefinedTransitionError = {
+    WorkflowId: WorkflowId
+    UndefinedTransition: TransitionId }
+
+type WorkflowError =
+    | CommandCreation of CommandCreationError
+    | MaxCountExceeded of MaxCountExceededError
+    | Duplicate of WorkflowId
+    | NonExistant
+    | NotFound of WorkflowId
+    | UndefinedVersion of VersionedWorkflowId
+    | Invalid of InvalidWorkflowError
+    | DuplicateStateName of DuplicateStateNameError
+    | UndefinedState of UndefinedStateError
+    | CantRemoveInitialState of WorkflowId
+    | InitialStateCantBeTerminalState of WorkflowId
+    | UndefinedTransition of UndefinedTransitionError
+    | DuplicateTransition of TransitionError
+    | DuplicateTransitionName of TransitionError
+    | Unknown of WorkflowId * exn
+and WorkflowException (message, workflowId) = 
     inherit exn(sprintf "Error for %O: %s" workflowId message)
     member __.WorkflowId = workflowId
     static member New i m = WorkflowException(m,i)
-    
-type MaxCountExceededException (message, workflowId, maxCountAllowed) = 
-    inherit WorkflowException(message, workflowId)
-  with
-    member __.MaxCountAllowed = maxCountAllowed
-
-type DuplicateWorkflowIdException (workflowId) = 
-    inherit WorkflowException("already exists",workflowId)
-
-type NonExistantWorkflowException (workflowId) =
-    inherit WorkflowException("workflow does not exist", workflowId)
-
-type UndefinedVersionException (workflowId,version) =
-    inherit WorkflowException(sprintf "%O not found" version,workflowId)
-    with
-    member __.Version = version
-    static member New w v = UndefinedVersionException(w,v)
-
-type InvalidWorkflowException (message, workflowId, problems) = 
-    inherit WorkflowException("",workflowId)
+and MaxCountExceededError = {
+    WorkflowId: WorkflowId
+    Message: string
+    MaxCountAllowed: StateId }
+and InvalidWorkflowError (workflowId, problems) =
     let noneIfEmpty s = if s = "" then None else Some s
     let problemMessage p =
         let nts =
@@ -192,7 +197,7 @@ type InvalidWorkflowException (message, workflowId, problems) =
             | true -> Some "No Terminal States, at least one is required"
             | false -> None
         let us =
-            p.UnreachableStates 
+            p.UnreachableStates
             |> Set.map string
             |> Set.toSeq |> String.concat ", " |> noneIfEmpty
             |> Option.map (sprintf "States unreachable from initial state: %s")
@@ -204,38 +209,49 @@ type InvalidWorkflowException (message, workflowId, problems) =
         [ nts; us; crts]            
         |> List.choose id
         |> Seq.ofList
-    override __.Message =
-        sprintf "%s%s" base.Message message
+    member __.Message =
+        workflowId.ToString ()
+        |> sprintf "Workflow with id '%s' is invalid:\n"
         |> Seq.singleton |> Seq.append (problemMessage problems) |> String.concat "\n"
     member __.Problems = problems
+    member __.WorkflowId = workflowId
+and DuplicateStateNameError = {
+    WorkflowId: WorkflowId
+    StateName: string }
+and UndefinedStateError = {
+    WorkflowId: WorkflowId
+    UndefinedState: StateId }
+and TransitionError = {
+    WorkflowId: WorkflowId
+    ErrorTransition: Transition }
+    
+module WorkflowError =
+    let maxCountExceeded workflowId maxCount message =
+        { WorkflowId = workflowId
+          Message = message
+          MaxCountAllowed = maxCount }
+        |> MaxCountExceeded
+    let duplicate = Duplicate
+    let nonExistant = NonExistant
+    let undefinedVersion = UndefinedVersion
+    let invalid workflowId problems =
+        InvalidWorkflowError(workflowId, problems)
+        |> Invalid
+    let duplicateStateName workflowId stateName =
+        DuplicateStateName { WorkflowId = workflowId; StateName = stateName }
+    let undefinedState workflowId stateId =
+        UndefinedState { WorkflowId = workflowId; UndefinedState = stateId }
+    let cantRemoveInitialState = CantRemoveInitialState
+    let initialStateCantBeTerminalState = InitialStateCantBeTerminalState
+    let undefinedTransition workflowId transitionId =
+        UndefinedTransition { WorkflowId = workflowId; UndefinedTransition = transitionId }
+    let duplicateTransition workflowId transition =
+        DuplicateTransition { WorkflowId = workflowId; ErrorTransition = transition }
+    let duplicateTransitionName workflowId transition =
+        DuplicateTransitionName { WorkflowId = workflowId; ErrorTransition = transition }
+    let unknown workflowId e =
+        Unknown (workflowId,e)
 
-type DuplicateStateNameException (workflowId,stateName) =
-    inherit WorkflowException(sprintf "State with name '%s' already exists" stateName,workflowId)
-  with
-    member __.StateName = stateName
-    static member New i s = DuplicateStateNameException(i,s)
-
-type UndefinedStateException (workflowId,stateId) =
-    inherit WorkflowException(sprintf "%O not found" stateId,workflowId)
-  with
-    member __.StateId = stateId
-
-type InitialStateException (message,workflowId) = inherit WorkflowException(message,workflowId)
-
-type UndefinedTransitionException (workflowId,transitionId) =
-    inherit WorkflowException(sprintf "%O not found" transitionId,workflowId)
-  with
-    member __.TransitionId = transitionId
-
-type DuplicateTransitionException (workflowId,transition:Transition) =
-    inherit WorkflowException(sprintf "%O with name '%s' already exists between source '%O' and target '%O'" transition.Id transition.Name transition.SourceState transition.TargetState,workflowId)
-  with
-    member __.Transition = transition
-
-type DuplicateTransitionNameException (workflowId,transition:Transition) =
-    inherit WorkflowException(sprintf "%O with unique name '%s' already exists" transition.Id transition.Name,workflowId)
-  with
-    member __.Transition = transition
     
 type WorkflowModel =
   { WorkflowId: WorkflowId
@@ -264,6 +280,7 @@ type WorkflowModel =
 type Workflow = WorkflowModel option
 
 module Workflow =
+    open WorkflowError
 
     let eWorkflowId = function
         | WorkflowCreated e -> e.WorkflowId
@@ -317,7 +334,8 @@ module Workflow =
                 |> Array.tryFind (fun (a,b) -> b - a > 1u)
                 |> Option.map (fst >> ((+) 1u) )
                 //TODO should this actually be MaxVal + 1 ?
-                |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName |> MaxCountExceededException.New workflowId  :> exn)
+                |> Result.ofOption (sprintf "No more than %u %s's allowed" maxVal typeName
+                |> maxCountExceeded workflowId maxVal)
 
     let internal nextStateId workFlowId workflowModel = nextId "states" workflowModel.States workFlowId
     let internal nextTransitionId workFlowId workflowModel = nextId "transitions" workflowModel.Transitions workFlowId
@@ -385,10 +403,10 @@ module Workflow =
               TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = termState.Id } ]
             |> Ok
         | _ -> 
-            DuplicateWorkflowIdException(command.WorkflowId) :> exn |> Error
+            duplicate command.WorkflowId |> Error
 
-    let internal bindExists workflowId f : (Workflow -> Result<'a,exn>) =
-        Result.ofOption (workflowId |> NonExistantWorkflowException :> exn)
+    let internal bindExists workflowId f : (Workflow -> Result<'a,WorkflowError>) =
+        Result.ofOption NonExistant
         >> Result.bind f
     
     let renameWorkflow (command: CreateWorkflowCommand) =
@@ -425,16 +443,14 @@ module Workflow =
             [ WorkflowPublished { Id = command; Version = workflowModel.Version }
               VersionIncremented { Id = command; Version = workflowModel.Version.Inc } ]
             |> Ok
-        | Some problems ->
-            (sprintf "%O is not valid and cannot be published" workflowModel.Version,command,problems)
-            |> InvalidWorkflowException :> exn |> Error
+        | Some problems -> invalid command problems |> Error
 
     let publishWorkflow command = command |> straightPublish |> bindExists command
 
     let inline internal bindVersionExists version state x =
         match state.Versions.Contains version with
             | true -> Ok x
-            | false -> UndefinedVersionException (state.WorkflowId,version) :> exn |> Error
+            | false -> undefinedVersion { Id = state.WorkflowId; Version = version } |> Error
 
     let rePublishWorkflow (command: VersionedWorkflowId) =
         (fun s ->
@@ -459,7 +475,7 @@ module Workflow =
       (f: ^a -> ^b -> ^b option) (aMap:Map< ^a,^b>) createErr x = 
         Map.tryPick f aMap
         |> function
-            | Some t -> t |> createErr :> exn |> Error
+            | Some t -> t |> createErr |> Error
             | None -> Ok x
 
     let addState (command: AddStateCommand) =
@@ -474,28 +490,28 @@ module Workflow =
                 |> tryPickResult<StateId,State>
                         (fun _ v -> match v.Name = stateEvent.StateName with | true -> Some v | false -> None)
                         s.States
-                        (fun st -> DuplicateStateNameException(stateEvent.WorkflowId,st.Name) :> exn))
+                        (fun st -> duplicateStateName stateEvent.WorkflowId st.Name))
         |> bindExists command.WorkflowId
 
     let inline internal ifStateExists stateId x state =
         match state.States.ContainsKey stateId with
           | true -> Ok x
-          | false -> UndefinedStateException(state.WorkflowId,stateId) :> exn |> Error
+          | false -> undefinedState state.WorkflowId stateId |> Error
 
     let renameState (command: EditStateCommand) =
         [ StateRenamed { WorkflowId = command.WorkflowId; StateId = command.StateId; StateName = command.StateName } ]
         |> ifStateExists command.StateId
         |> bindExists command.WorkflowId
 
-    let inline internal initialStateError command errMsg x =
+    let inline internal initialStateErr command errFunc x =
         match command.StateId <> 0u with
           | true -> Ok x
-          | false -> InitialStateException(errMsg,command.WorkflowId) :> exn |> Error
+          | false -> errFunc command.WorkflowId |> Error
 
     let dropState (command: StateCommand) = 
         [ StateDropped { WorkflowId = command.WorkflowId; StateId = command.StateId } ]
         |> ifStateExists command.StateId
-        >> Result.bind (initialStateError command "Initial state cannot be removed")
+        >> Result.bind (initialStateErr command cantRemoveInitialState)
         |> bindExists command.WorkflowId
 
     let setTerminalState (command: StateCommand ) =
@@ -505,7 +521,7 @@ module Workflow =
                   | true -> []
                   | false -> [ TerminalStateDesignated { WorkflowId = command.WorkflowId; StateId = command.StateId } ]
             s |> ifStateExists command.StateId events
-            |> Result.bind (initialStateError command "Initial state cannot be a terminal state")
+            |> Result.bind (initialStateErr command initialStateCantBeTerminalState)
         |> bindExists command.WorkflowId
 
     let unSetTerminalState (command: StateCommand ) =
@@ -523,8 +539,8 @@ module Workflow =
         let transitionPathExists _ (v:Transition) =
             match v.SourceState = transEvent.SourceState && v.TargetState = transEvent.TargetState with | true -> Some v | false -> None
         x
-        |> tryPickResult<TransitionId,Transition> transitionNameExists workflowModel.Transitions (fun t -> DuplicateTransitionNameException(transEvent.WorkflowId,t) :> exn)
-        |> Result.bind (tryPickResult<TransitionId,Transition> transitionPathExists workflowModel.Transitions (fun t -> DuplicateTransitionException(transEvent.WorkflowId,t) :> exn))
+        |> tryPickResult<TransitionId,Transition> transitionNameExists workflowModel.Transitions (fun t -> duplicateTransitionName transEvent.WorkflowId t)
+        |> Result.bind (tryPickResult<TransitionId,Transition> transitionPathExists workflowModel.Transitions (fun t -> duplicateTransition transEvent.WorkflowId t))
         |> Result.bind (fun y -> ifStateExists transEvent.SourceState y workflowModel)
         |> Result.bind (fun y -> ifStateExists transEvent.TargetState y workflowModel)
 
@@ -545,7 +561,7 @@ module Workflow =
     let internal ifTransitionExists transitionId x state =
         match state.Transitions.ContainsKey transitionId with
         | true -> Ok x
-        | false -> UndefinedTransitionException(state.WorkflowId,transitionId) :> exn |> Error
+        | false -> undefinedTransition state.WorkflowId transitionId |> Error
 
     let editTransition (command: EditTransitionCommand) =
         fun s ->
