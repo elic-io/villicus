@@ -3,122 +3,141 @@ module WorkflowTests
 open System
 open Xunit
 open Villicus.Domain
+open Villicus.Domain.CommandHelpers
+open Villicus.Domain.CommandAPI
 open TestUtil
 
-let argNull = expectExn<ArgumentNullException>
+let argNull =
+    function
+    | Error (NullArgument _) -> ()
+    | Ok _
+    | Error (_) -> raise (exn "expected null Error")
+
+let someWorkflow = Result.bind(Result.ofOption NonExistant)
 
 [<Fact>]
 let ``CreateCommand missing name`` () =    
-    argNull <| fun () -> CreateWorkflowCommand (Guid.NewGuid() |> WorkflowId, "") |> ignore
-    argNull <| fun () -> CreateWorkflowCommand (Guid.NewGuid() |> WorkflowId, null) |> ignore
-    argNull <| fun () -> CreateWorkflowCommand (Guid.NewGuid() |> WorkflowId, " ") |> ignore
+    argNull <| newCreateWorkflowCommand (Guid.NewGuid() |> WorkflowId) ""
+    argNull <| newCreateWorkflowCommand (Guid.NewGuid() |> WorkflowId) null
+    argNull <| newCreateWorkflowCommand (Guid.NewGuid() |> WorkflowId) " "
 
 [<Fact>]
 let ``AddStateCommand missing name`` () =
-    argNull <| fun () -> AddStateCommand (Guid.NewGuid() |> WorkflowId, "") |> ignore
+    argNull <| newAddStateCommand (Guid.NewGuid() |> WorkflowId)  ""
 
 [<Fact>]
 let ``EditStateCommand missing name`` () =
-    argNull <| fun () -> EditStateCommand (Guid.NewGuid() |> WorkflowId, 0u, "") |> ignore
+    argNull <| newEditStateCommand (Guid.NewGuid() |> WorkflowId) 0u ""
 
 [<Fact>]
 let ``AddTransitionCommand missing name`` () =
-    argNull <| fun () -> AddTransitionCommand (Guid.NewGuid() |> WorkflowId, "", 0u, 1u) |> ignore
+    argNull <| newAddTransitionCommand (Guid.NewGuid() |> WorkflowId) "" 0u 1u
+
+let argDupe =
+    function
+    | Error (CantTargetSelf _) -> ()
+    | Ok _
+    | Error (_) -> raise (exn "expected duplicate states Error")
+
 
 [<Fact>]
 let ``AddTransitionCommand duplicate states`` () =
-    expectExn<ArgumentException> <| fun () -> AddTransitionCommand (Guid.NewGuid() |> WorkflowId, "Duplicate States", 0u, 0u) |> ignore
+    argDupe <| newAddTransitionCommand (Guid.NewGuid() |> WorkflowId) "Duplicate States" 0u 0u
 
 [<Fact>]
 let ``EditTransitionCommand missing name`` () =
-    argNull <| fun () -> EditTransitionCommand (Guid.NewGuid() |> WorkflowId, 0u, "", 0u, 1u) |> ignore
+    argNull <| newEditTransitionCommand (Guid.NewGuid() |> WorkflowId) 0u "" 0u 1u
 
 [<Fact>]
 let ``EditTransitionCommand duplicate states`` () =
-    expectExn<ArgumentException> <| fun () -> EditTransitionCommand (Guid.NewGuid() |> WorkflowId, 0u, "Duplicate States", 0u, 0u) |> ignore
+    argDupe <| newEditTransitionCommand (Guid.NewGuid() |> WorkflowId) 0u "Duplicate States" 0u 0u
 
 let handleEvolve command state =
-    state
-    |> Workflow.handle command
+    Workflow.handle command state
     |> Result.map (List.fold Workflow.evolve state)
 
-let processCmd command = handleEvolve command |> Result.bind
+let processCmd command wf =
+    command
+    |> Result.mapError CommandCreation
+    |> (Result.bind (fun cmd -> (Result.bind (handleEvolve cmd)) wf) )
 
-let testCreateWorkflow iD name = handleEvolve (CreateWorkflowCommand (iD, name) |> CreateWorkflow) None 
+let testCreateWorkflow iD name : Result<Workflow,WorkflowError> =
+    createWorkflow iD name
+    |> Result.mapError CommandCreation
+    |> Result.bind (fun createWfCommand -> handleEvolve createWfCommand None)
 
-let newWorkflowId = Guid.NewGuid() |> WorkflowId
+let testWorkflowId = Guid.NewGuid() |> WorkflowId
 let testWorkFlowName = "TestWorkflow"
-let testWorkflow = testCreateWorkflow newWorkflowId testWorkFlowName
+let testWorkflow = testCreateWorkflow testWorkflowId testWorkFlowName
 
 [<Fact>]
 let ``workflow creation`` () =
-    None |> Workflow.handle (CreateWorkflowCommand (newWorkflowId, testWorkFlowName) |> CreateWorkflow)
+    newCreateWorkflowCommand testWorkflowId testWorkFlowName
+    |> Result.map2  CreateWorkflow CommandCreation
+    |> Result.bind (fun x -> Workflow.handle x None)
     |> Result.map (fun events -> 
         Assert.Equal(4,events.Length)
         List.fold Workflow.evolve None events)
     |> Result.map(fun wf -> Assert.True(wf.IsSome); wf)
     |> Result.map (Option.map (fun x ->
                 Assert.Equal(testWorkFlowName,x.Name)
-                Assert.Equal(newWorkflowId,x.WorkflowId)))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+                Assert.Equal(testWorkflowId,x.WorkflowId)))
+    |> raiseIfError
 
 [<Fact>]
 let ``duplicate workflow error`` () =
-    fun () ->
+    let err =
+        let createCmd =
+            createWorkflow testWorkflowId "Test2"
         testWorkflow
-        |> processCmd (CreateWorkflowCommand (Guid.NewGuid() |> WorkflowId, "Test2") |> CreateWorkflow)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateWorkflowIdException>
+        |> (processCmd createCmd)
+    Assert.Equal(WorkflowError.duplicate testWorkflowId |> Error, err)
 
 [<Fact>]
 let ``simple created workflow is valid`` () =
-    match testWorkflow with
-      | Ok model ->
-        model 
-        |> Option.bind (fun m -> 
+    testWorkflow
+    |> Result.map (Option.bind (fun m -> 
             Workflow.problems m
             |> Option.map (fun problems ->
-                raise (InvalidWorkflowException("Initially Created Workflow is Invalid",m.WorkflowId,problems))))
-      | Error e -> raise e
-    |> ignore
+                WorkflowError.invalid m.WorkflowId problems)))
+    |> raiseIfError
 
 [<Fact>]
 let ``publish workflow`` () =
     testWorkflow
     |> Result.map(Option.map(fun before ->
         testWorkflow
-        |> processCmd (PublishWorkflow newWorkflowId)
+        |> processCmd (publishWorkflow testWorkflowId)
         |> Result.map(Option.map(fun m ->
             Assert.True(before.Version |> m.PublishedVersions.Contains)
             Assert.Equal(before.Version.Inc,m.Version)
-            Assert.Equal(2,m.Versions.Count)))
-        |> Result.mapError(fun e -> raise e)))
-    |> ignore
+            Assert.Equal(2,m.Versions.Count)))))
+    |> raiseIfError
 
 [<Fact>]
 let ``republish workflow on an unpublished workflow is the same as publish`` () =
     testWorkflow
     |> Result.map(Option.map(fun before ->
         testWorkflow
-        |> processCmd (RePublishWorkflow before.VersionedWorkflowId)
+        |> processCmd (rePublishWorkflow before.VersionedWorkflowId)
         |> Result.map(Option.map(fun m ->
             Assert.True(before.Version |> m.PublishedVersions.Contains)
-            Assert.Equal(before.Version.Inc,m.Version)))
-        |> Result.mapError(fun e -> raise e)))
-    |> ignore
+            Assert.Equal(before.Version.Inc,m.Version)))))
+    |> raiseIfError
 
 [<Fact>]
 let ``cannot republish a version that doesn't exist`` () =
-    fun () ->
+    testWorkflow
+    |> Result.map(Option.map(fun before ->
+        let rePubCmd =
+            { Id = before.WorkflowId; Version = before.Version.Inc }
+            |> rePublishWorkflow
         testWorkflow
-        |> Result.map(Option.map(fun before ->
-            testWorkflow
-            |> processCmd (RePublishWorkflow { Id = before.WorkflowId; Version = before.Version.Inc })
-            |> Result.mapError(fun e -> raise e)))
-        |> ignore
-    |> expectExn<UndefinedVersionException>
+        |> processCmd rePubCmd
+        |> Result.map2
+            (fun _ -> raise (exn "this should have been an UndefinedVersion error"))
+            (fun e -> Assert.True(match e with | UndefinedVersion _ -> true | _ -> false))))
+    |> ignore
 
 let dec = (fun (Version i) -> i-1UL |> Version)
 
@@ -126,141 +145,129 @@ let dec = (fun (Version i) -> i-1UL |> Version)
 let ``republish a published version generates empty event set`` () =
     let published =
         testWorkflow
-        |> processCmd (PublishWorkflow newWorkflowId)
+        |> processCmd (publishWorkflow testWorkflowId)
     published |> Result.map(Option.map(fun p -> 
             let pubVersionId = { 
                 Id = p.WorkflowId 
                 Version = p.PublishedVersions |> Set.toSeq |> Seq.head }
             published
             |> Result.bind (Workflow.handle (RePublishWorkflow pubVersionId))
-            |> Result.map(fun events -> Assert.True(events |> List.isEmpty))
-            |> Result.mapError(fun e -> raise e)))
-    |> ignore
+            |> Result.map(fun events -> Assert.True(events |> List.isEmpty))))
+    |> raiseIfError
 
 [<Fact>]
 let ``withdraw a version`` () =
     let published =
         testWorkflow
-        |> processCmd (PublishWorkflow newWorkflowId)
+        |> processCmd (publishWorkflow testWorkflowId)
     published |> Result.map(Option.map(fun p -> 
             let pubVersion = p.PublishedVersions |> Set.toSeq |> Seq.head
             let pubVersionId = { Id = p.WorkflowId; Version = pubVersion }
             published
-            |> processCmd (WithdrawWorkflow pubVersionId)
-            |> Result.map(Option.map(fun w -> Assert.False(w.PublishedVersions.Contains pubVersion)))
-            |> Result.mapError(fun e -> raise e)))
-    |> ignore
+            |> processCmd (withdrawWorkflow pubVersionId)
+            |> Result.map(Option.map(fun w -> Assert.False(w.PublishedVersions.Contains pubVersion)))))
+    |> raiseIfError
 
 [<Fact>]
 let ``republish a withdrawn version`` () =
     let published =
         testWorkflow
-        |> processCmd (PublishWorkflow newWorkflowId)
+        |> processCmd (publishWorkflow testWorkflowId)
     published |> Result.map(Option.map(fun p -> 
             let pubVersion = p.PublishedVersions |> Set.toSeq |> Seq.head
             let pubVersionId = { Id = p.WorkflowId; Version = pubVersion }
             published
-            |> processCmd (WithdrawWorkflow pubVersionId)
-            |> processCmd (RePublishWorkflow pubVersionId)
-            |> Result.map(Option.map(fun w -> Assert.True(pubVersion |> w.PublishedVersions.Contains)))
-            |> Result.mapError(fun e -> raise e)))
-    |> ignore
+            |> processCmd (withdrawWorkflow pubVersionId)
+            |> processCmd (rePublishWorkflow pubVersionId)
+            |> Result.map(Option.map(fun w -> Assert.True(pubVersion |> w.PublishedVersions.Contains)))))
+    |> raiseIfError
 
 [<Fact>]
 let ``add state`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (addState testWorkflowId "Orphan")
+    |> someWorkflow
     |> Result.map(fun s ->
         Assert.Equal(3,s.States.Count)
         Assert.Equal("Orphan",Map.find 2u s.States |> (fun x -> x.Name)))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``add state with same name as existing`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
-        |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateStateNameException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "Orphan")
+    |> processCmd (addState testWorkflowId "Orphan")
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an duplicate workflowId error"))
+        (fun e -> Assert.True(match e with | DuplicateStateName _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``rename state`` () =
     testWorkflow
-    |> processCmd (RenameState (EditStateCommand(newWorkflowId,0u,"Renamed Initial State")))
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (renameState testWorkflowId 0u "Renamed Initial State")
+    |> someWorkflow
     |> Result.map(fun s ->
         Assert.Equal(2,s.States.Count)
         Assert.Equal("Renamed Initial State",Map.find 0u s.States |> (fun x -> x.Name)))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``rename state that doesn't exist`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (RenameState (EditStateCommand(newWorkflowId,2u,"Rename NonExistant State")))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (renameState testWorkflowId 2u "Rename NonExistant State")
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState error"))
+        (fun e -> Assert.Equal(WorkflowError.undefinedState testWorkflowId 2u, e))
+    |> ignore
 
 [<Fact>]
 let ``can't publish invalid workflow`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
-        |> processCmd (PublishWorkflow newWorkflowId)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<InvalidWorkflowException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "Orphan")
+    |> processCmd (publishWorkflow testWorkflowId)
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an Invalid Workflow error"))
+        (fun e -> Assert.True( match e with | Invalid _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``orphaned state makes workflow invalid`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"Orphan")))
-    |> function
-      | Ok model ->
+    |> processCmd (addState testWorkflowId "Orphan")
+    |> Result.map (fun model ->
         model 
         |> Option.bind (fun m -> 
             Assert.True((Workflow.problems m).IsSome)
             Workflow.problems m
             |> Option.map (fun p -> 
                 Assert.False(p.Valid)
-                Assert.True(2u |> p.UnreachableStates.Contains)))
-      | Error e -> raise e
-    |> ignore
+                Assert.True(2u |> p.UnreachableStates.Contains))))
+    |> raiseIfError
 
 [<Fact>]
 let ``state that can't reach terminal makes workflow invalid`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"Not Terminated")))
-    |> processCmd (AddTransition (AddTransitionCommand(newWorkflowId,"to nonTerminated",0u,2u)))
-    |> function
-      | Ok model ->
-        model 
-        |> Option.bind (fun m -> 
+    |> processCmd (addState testWorkflowId "Not Terminated")
+    |> processCmd (addTransition testWorkflowId "to nonTerminated" 0u 2u)
+    |> Result.map(
+        Option.bind (fun m -> 
             Assert.True((Workflow.problems m).IsSome)
             Workflow.problems m
             |> Option.map (fun p -> 
                 Assert.False(p.Valid)
                 Assert.False(p.UnreachableStates.Contains 2u)
-                Assert.True(p.CannotReachAnyTerminalState.Contains 2u)))
-      | Error e -> raise e
-    |> ignore
+                Assert.True(p.CannotReachAnyTerminalState.Contains 2u))))
+    |> raiseIfError
 
 [<Fact>]
 let ``workflow without terminal states is invalid`` () =
     testWorkflow
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u } )
-    |> function
-      | Ok model ->
-        model 
-        |> Option.bind (fun m -> 
+    |> processCmd (unSetTerminalState testWorkflowId 1u)
+    |> Result.map(
+        Option.bind (fun m -> 
             Assert.True((Workflow.problems m).IsSome)
             Workflow.problems m
             |> Option.map (fun p -> 
@@ -268,37 +275,40 @@ let ``workflow without terminal states is invalid`` () =
                 Assert.False(p.UnreachableStates.Contains 1u)
                 Assert.True(p.CannotReachAnyTerminalState.Contains 0u)
                 Assert.True(p.CannotReachAnyTerminalState.Contains 1u)
-                Assert.True(p.NoTerminalStates)))
-      | Error e -> raise e
-    |> ignore
+                Assert.True(p.NoTerminalStates))))
+    |> raiseIfError
 
 // since this is an extreme edge case, we're probably alright
 [<Fact (Skip="Takes too long to run every time")>]
 let ``workflow state count exceeded returns correct error`` () =
     let rec processAll i limit a =
-        let b = a |> processCmd (AddState (AddStateCommand(newWorkflowId,sprintf "State %u" i)))
+        let b = a |> processCmd (addState testWorkflowId (sprintf "State %u" i))
         if i = limit then b else processAll (i+1u) limit b
-    fun () ->
-        testWorkflow
-        |> processAll 2u System.UInt32.MaxValue
-        |> processCmd (AddState (AddStateCommand(newWorkflowId,sprintf "One State too many")))
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<MaxCountExceededException>
+    testWorkflow
+    |> processAll 2u System.UInt32.MaxValue
+    |> processCmd (addState testWorkflowId "One State too many")
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an max count exceeded error"))
+        (fun e -> Assert.True( match e with | MaxCountExceeded _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``copy Workflow`` () =
     let oldWorkflow =
         match testWorkflow with
-            | Ok twf -> match twf with | Some x -> x | None -> failwith "won't happen"
-            | Error ex -> raise ex
+        | Ok twf -> match twf with | Some x -> x | None -> failwith "won't happen"
+        | Error err -> raise (err |> sprintf "Error: %O" |> exn)
     let copyCmd =
-        CopyWorkflowCommand({ Id = newWorkflowId; Version = 1UL |> Version },
-          Guid.NewGuid() |> WorkflowId,
-          oldWorkflow.Name |> sprintf "Copy of %s")
-        |> CopyWorkflow
+        copyWorkflow
+          { Id = testWorkflowId; Version = 1UL |> Version }
+          (Guid.NewGuid() |> WorkflowId)
+          (oldWorkflow.Name |> sprintf "Copy of %s")
+        |> Result.mapError CommandCreation
 
-    let events = testWorkflow |> Result.bind(Workflow.handle copyCmd)
+    let handleResult wf =
+        copyCmd
+        |> Result.bind (fun c -> Workflow.handle c wf)
+    let events = testWorkflow |> Result.bind handleResult
     let origEvents = events |> Result.map(List.filter(fun e -> oldWorkflow.WorkflowId = Workflow.eWorkflowId e ))
     let copyEvents = events |> Result.map(List.filter(fun e -> oldWorkflow.WorkflowId <> Workflow.eWorkflowId e ))
     testWorkflow |> Result.bind(fun state ->
@@ -316,108 +326,102 @@ let ``copy Workflow`` () =
                     Assert.Equal(n.Name,sprintf "Copy of %s" o.Name)
                     ())
                     |> Option.lift2)))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``drop state`` () =
     testWorkflow
-    |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 1u })
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (dropState testWorkflowId 1u)
+    |> someWorkflow
     |> Result.map(fun s ->
         Assert.Equal(1,s.States.Count))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``can't drop initial state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 0u })
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<InitialStateException>
+    testWorkflow
+    |> processCmd (dropState testWorkflowId 0u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an CantRemoveInitialState Error"))
+        (fun e -> Assert.True( match e with | CantRemoveInitialState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``can't drop nonexistant state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (DropState { WorkflowId = newWorkflowId; StateId = 2u })
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (dropState testWorkflowId 2u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``set terminal state`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (addState testWorkflowId "New Terminal")
+    |> processCmd (setTerminalState testWorkflowId 2u)
+    |> someWorkflow
     |> Result.map(fun s ->
         let newTerminal = s.States |> Map.find 2u
         Assert.True(s.TerminalStates.Contains 2u)
         Assert.True(newTerminal.IsTerminal))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``set terminal state that is already terminal generates no events`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-    |> Result.bind(Workflow.handle (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u }))
+    |> processCmd (addState testWorkflowId "New Terminal")
+    |> processCmd (setTerminalState testWorkflowId 2u)
+    |> Result.bind(Workflow.handle (SetTerminalState { WorkflowId = testWorkflowId; StateId = 2u }))
     |> Result.map(List.isEmpty >> Assert.True)
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``Setting terminal state that doesn't exist`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (setTerminalState testWorkflowId 2u)
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``unset terminal state`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand(newWorkflowId,"New Terminal")))
-    |> processCmd (SetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (addState testWorkflowId "New Terminal")
+    |> processCmd (setTerminalState testWorkflowId 2u)
+    |> processCmd (unSetTerminalState testWorkflowId 2u)
+    |> someWorkflow
     |> Result.map(fun s ->
         Assert.False(s.TerminalStates.Contains 2u)
         Assert.False((s.States |> Map.find 2u).IsTerminal))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``unset terminal state that is not terminal generates no events`` () =
     testWorkflow
-    |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u })
-    |> Result.bind(Workflow.handle (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 1u }))
+    |> processCmd (unSetTerminalState testWorkflowId 1u)
+    |> Result.bind(Workflow.handle (UnSetTerminalState { WorkflowId = testWorkflowId; StateId = 1u }))
     |> Result.map(List.isEmpty >> Assert.True)
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``unsetting terminal state that doesn't exist`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (UnSetTerminalState { WorkflowId = newWorkflowId; StateId = 2u })
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (unSetTerminalState testWorkflowId 2u)
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``add transition`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State")))
-    |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (addState testWorkflowId "New Terminal")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> someWorkflow
     |> Result.map(fun s ->
         Assert.Equal(2,s.Transitions.Count)
         let newT = s.Transitions |> Map.find 1u
@@ -425,149 +429,146 @@ let ``add transition`` () =
         Assert.Equal("New Transition",newT.Name)
         Assert.Equal(1u,newT.SourceState)
         Assert.Equal(2u,newT.TargetState))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``add duplicate transition path`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition 2", 1u, 2u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateTransitionException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New Terminal")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (addTransition testWorkflowId "New Transition 2" 1u 2u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an DuplicateTransition Error"))
+        (fun e -> Assert.True( match e with | DuplicateTransition _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``add duplicate transition name`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 0u, 3u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateTransitionNameException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New State")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 0u 3u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an DuplicateTransitionName Error"))
+        (fun e -> Assert.True( match e with | DuplicateTransitionName _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``transition from nonexistant state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 2u, 1u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (addTransition testWorkflowId "New Transition" 2u 1u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``transition to nonexistant state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``edit transition`` () =
     testWorkflow
-    |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-    |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-    |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 3")))
-    |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 1u, "Edited Transition", 2u, 3u)))
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 0u 2u)
+    |> processCmd (addState testWorkflowId "New State 3")
+    |> processCmd (addTransition testWorkflowId "Edited Transition" 2u 3u)
+    |> someWorkflow
     |> Result.map(fun s ->
-        Assert.Equal(2,s.Transitions.Count)
-        let newT = s.Transitions |> Map.find 1u
-        Assert.Equal(1u,newT.Id)
+        Assert.Equal(3,s.Transitions.Count)
+        let newT = s.Transitions |> Map.find 2u
+        Assert.Equal(2u,newT.Id)
         Assert.Equal("Edited Transition",newT.Name)
         Assert.Equal(2u,newT.SourceState)
         Assert.Equal(3u,newT.TargetState))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``edit transition that doesn't exist`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 1u, "Doesn't Exist", 0u, 1u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedTransitionException>
+    testWorkflow
+    |> processCmd (editTransition testWorkflowId 1u "Doesn't Exist" 0u 1u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedTransition Error"))
+        (fun e -> Assert.True( match e with | UndefinedTransition _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``edit transition to duplicate name`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 3")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition 2", 2u, 3u)))
-        |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 2u, "New Transition", 2u, 3u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateTransitionNameException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (addState testWorkflowId "New State 3")
+    |> processCmd (addTransition testWorkflowId "New Transition 2" 2u 3u)
+    |> processCmd (editTransition testWorkflowId 2u "New Transition" 2u 3u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an DuplicateTransitionName Error"))
+        (fun e -> Assert.True( match e with | DuplicateTransitionName _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``edit transition to duplicate path`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 3")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition 2", 2u, 3u)))
-        |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 2u, "New Transition 2", 1u, 2u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<DuplicateTransitionException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (addState testWorkflowId "New State 3")
+    |> processCmd (addTransition testWorkflowId "New Transition 2" 2u 3u)
+    |> processCmd (editTransition testWorkflowId 2u "New Transition 2" 1u 2u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an DuplicateTransition Error"))
+        (fun e -> Assert.True( match e with | DuplicateTransition _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``edit transition to nonexistant source state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 1u, "New Transition", 99u, 2u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (editTransition testWorkflowId 1u "New Transition" 99u 2u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``edit transition to nonexistant target state`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (AddState (AddStateCommand (newWorkflowId, "New State 2")))
-        |> processCmd (AddTransition (AddTransitionCommand (newWorkflowId, "New Transition", 1u, 2u)))
-        |> processCmd (EditTransition (EditTransitionCommand (newWorkflowId, 1u, "New Transition", 1u, 3u)))
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedStateException>
+    testWorkflow
+    |> processCmd (addState testWorkflowId "New State 2")
+    |> processCmd (addTransition testWorkflowId "New Transition" 1u 2u)
+    |> processCmd (editTransition testWorkflowId 1u "New Transition" 1u 3u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedState Error"))
+        (fun e -> Assert.True( match e with | UndefinedState _ -> true | _ -> false))
+    |> ignore
 
 [<Fact>]
 let ``drop transition`` () =
     testWorkflow
-    |> processCmd (DropTransition { WorkflowId = newWorkflowId; TransitionId = 0u })
-    |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
+    |> processCmd (dropTransition testWorkflowId 0u)
+    |> someWorkflow
     |> Result.map(fun m -> Assert.Equal(0,m.Transitions.Count))
-    |> Result.mapError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
 
 [<Fact>]
 let ``drop transition that doesn't exist`` () =
-    fun () ->
-        testWorkflow
-        |> processCmd (DropTransition { WorkflowId = newWorkflowId; TransitionId = 1u })
-        |> Result.bind("testWorkflow should not be None" |> exn |> Result.ofOption)
-        |> Result.mapError(fun e -> raise e)
-        |> ignore
-    |> expectExn<UndefinedTransitionException>
+    testWorkflow
+    |> processCmd (dropTransition testWorkflowId 1u)
+    |> someWorkflow
+    |> Result.map2
+        (fun _ -> raise (exn "this should have been an UndefinedTransition Error"))
+        (fun e -> Assert.True( match e with | UndefinedTransition _ -> true | _ -> false))
+    |> ignore

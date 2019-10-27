@@ -9,7 +9,7 @@ open Thoth.Json.Net
 #endif
 
 type APIError =
-    | Duplicate of DuplicateWorkflowIdException
+    | WorkflowError of WorkflowError
     | Unknown of exn
     | NotFound of System.Guid
     | BadRequest of exn
@@ -92,21 +92,23 @@ module Task =
         return! f x' }
 
 let processCommand =
-    WFCommand.newCommandStream
-    >> wfDispatcher.PostAndAsyncReply
-    >> Async.StartAsTask
-    >> Task.map(Result.map2
-        (fun (eventIndex,eventList) ->
-            (eventList
-            |> List.map (WorkflowEvent.Encoder)
-            |> Encode.list
-            |> Encode.toString 4
-            |> Successful.CREATED)     
-            >=> (eventIndex |> string |>setHttpHeader "Etag"))
-        (fun error ->
-            match error with
-            | :? DuplicateWorkflowIdException as e -> Duplicate e
-            | _ -> Unknown error))
+    Result.map (
+        WFCommand.newCommandStream
+        >> wfDispatcher.PostAndAsyncReply
+        >> Async.StartAsTask
+        >> Task.map(
+          Result.map2
+            (fun (eventIndex,eventList) ->
+                (eventList
+                |> List.map (WorkflowEvent.Encoder)
+                |> Encode.list
+                |> Encode.toString 4
+                |> Successful.CREATED)     
+                >=> (eventIndex |> string |> setHttpHeader "Etag"))
+            WorkflowError))
+    >> function
+    | Ok x -> x
+    | Error e -> e |> CommandCreationError.ToExn |> BadRequest |> Error |> Task.FromResult
 
 let postText (ctx:HttpContext) =
     use body = new System.IO.StreamReader(ctx.Request.Body)
@@ -139,7 +141,7 @@ let getEvents wfid : (HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (
     wfDispatcher.PostAndAsyncReply postMsg
     |> Async.StartAsTask
     |> Task.map(
-        Result.mapError Unknown
+        Result.mapError WorkflowError
         >> Result.bind(fun (eventList,eventIndex,nextEventId) ->
             match eventList.Length,offSet with
             | 0,0L -> wfid |> NotFound |> Error
@@ -201,13 +203,11 @@ let getAllWorkflows : (HttpContext -> Task<Result<HttpHandler,APIError>>) = fun 
     with e -> e |> Unknown |> Error |> Task.FromResult
 
 
-
-
 let getWorkflow wfid = fun (_:HttpContext) ->
     Common.getState (WorkflowId wfid) 0L
     |> wfDispatcher.PostAndAsyncReply
     |> Async.StartAsTask |> Task.map(
-        Result.mapError Unknown
+        Result.mapError WorkflowError
         >> Result.bind(function
             | (_,None) -> wfid |> NotFound |> Error
             | (eventIndex,Some wfModel) ->
@@ -219,11 +219,66 @@ let formatErrors (f: HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (n
     let errorContent = setHttpHeader "Content-Type" "text/plain; charset=UTF-8"
     ctx |> f |> Task.bind(
         Result.mapError(function
-            | Duplicate e -> RequestErrors.UNPROCESSABLE_ENTITY e.Message
             | Unknown e -> ServerErrors.INTERNAL_ERROR e.Message
             | NotFound guid -> guid.ToString() |> sprintf "WorkflowId '%s' not found" |> RequestErrors.NOT_FOUND
             | BadRequest e -> RequestErrors.BAD_REQUEST e.Message
-            | InvalidUUID guidStr -> guidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST)
+            | InvalidUUID guidStr -> guidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST
+            | WorkflowError wfe ->
+                match wfe with
+                | CommandCreation ccError ->
+                    match ccError with
+                    | NullArgument errMsg -> errMsg
+                    | CantTargetSelf errMsg -> errMsg
+                    |> RequestErrors.BAD_REQUEST
+                | MaxCountExceeded maxCountError ->
+                    RequestErrors.UNPROCESSABLE_ENTITY maxCountError.Message
+                | Duplicate workflowId ->
+                    workflowId.ToString ()
+                    |> sprintf "A workflow with id '%s' already exists"
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | NonExistant ->
+                    RequestErrors.UNPROCESSABLE_ENTITY "Workflow must be created before processing other commands"
+                | WorkflowError.NotFound workflowId -> 
+                    workflowId.ToString ()
+                    |> sprintf "A workflow with id '%s' can't be found"
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | UndefinedVersion versionedWorkflowId ->
+                    versionedWorkflowId.ToString ()
+                    |> sprintf "A versioned, published workflow with id '%s' can't be found"
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | Invalid invalidWorkflowError ->
+                    RequestErrors.UNPROCESSABLE_ENTITY invalidWorkflowError.Message
+                | DuplicateStateName dupError ->
+                    sprintf "Workflow '%s' already has a state named '%s'" (dupError.WorkflowId.ToString()) dupError.StateName
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | UndefinedState undefinedStateError ->
+                    sprintf "Workflow '%s' does not have a state with id '%i'"
+                        (undefinedStateError.WorkflowId.ToString())
+                         undefinedStateError.UndefinedState
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | CantRemoveInitialState _ ->
+                    RequestErrors.UNPROCESSABLE_ENTITY "Can't remove initial state"
+                | InitialStateCantBeTerminalState _ ->
+                    RequestErrors.UNPROCESSABLE_ENTITY "Initial state can't be set as a terminal state"
+                | UndefinedTransition undefinedTransitionError ->
+                    sprintf "Workflow '%s' does not have a transition with id '%i'"
+                        (undefinedTransitionError.WorkflowId.ToString())
+                         undefinedTransitionError.UndefinedTransition
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | DuplicateTransition dupTransition ->
+                    sprintf "Workflow '%s' already has transition (id: '%i', name: '%s') from state '%i' to state '%i'"
+                        (dupTransition.WorkflowId.ToString())
+                         dupTransition.ErrorTransition.Id
+                         dupTransition.ErrorTransition.Name
+                         dupTransition.ErrorTransition.SourceState
+                         dupTransition.ErrorTransition.TargetState
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | DuplicateTransitionName dupError ->
+                    sprintf "Workflow '%s' already has a transition named '%s'" (dupError.WorkflowId.ToString()) dupError.ErrorTransition.Name
+                    |> RequestErrors.UNPROCESSABLE_ENTITY
+                | WorkflowError.Unknown (workflowId,ex) ->
+                    sprintf "Error processing command for workflow with id '%s': %O" (workflowId.ToString ()) ex
+                    |> ServerErrors.INTERNAL_ERROR)
         >> function
             | Ok handler -> handler
             | Error errHandler -> (errHandler >=> errorContent)

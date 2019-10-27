@@ -8,7 +8,7 @@ open Villicus
 open Villicus.Persistence
 open Villicus.CommandHandlers
 
-type WorkflowAgent = Agent<WFCommand<WorkflowCommand,WorkflowEvent,WorkflowId,int64*Workflow,exn>>
+type WorkflowAgent = Agent<WFCommand<WorkflowCommand,WorkflowEvent,WorkflowId,int64*Workflow,WorkflowError>>
 
 type AgentTestFixture = {
     CTS: System.Threading.CancellationTokenSource
@@ -34,10 +34,12 @@ let processResult checkModel = function
     | Error _ -> ()
 
 let inline postAndReply (agent:WorkflowAgent) =
-    WFCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
+    (Result.mapError CommandCreation)
+    >> (Result.map WFCommand.newCmd)
+    >> (Result.bind agent.PostAndReply) // >> Result.injectError raise
 
 let workflowCreation agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent
     |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))
     cts.Cancel() // stops sending events to observers
@@ -56,7 +58,7 @@ let ``dispatcher workflow creation`` () =
 
 
 let getWorkflowState agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent |> ignore
     agent.PostAndReply(fun r -> GetState (workflowId,0L,r))
     |> processResult (fun wfm -> Assert.Equal(testWFname,wfm.Name))
@@ -77,7 +79,7 @@ let ``dispatcher get workflow state`` () =
 
 
 let getWorkflowEvents agent (cts:System.Threading.CancellationTokenSource) workflowId testWFname =
-    CreateWorkflowCommand (workflowId, testWFname) |> CreateWorkflow
+    CommandAPI.createWorkflow workflowId testWFname
     |> postAndReply agent |> ignore
     agent.PostAndReply(fun r -> 
         ReadStream.New<WorkflowEvent> workflowId 0L 2 r |> ReadStream)
@@ -91,8 +93,7 @@ let getWorkflowEvents agent (cts:System.Threading.CancellationTokenSource) workf
         Assert.Equal(2,List.length eventList)
         Assert.Equal(4L,lastEventId)
         Assert.Equal(None,nextEventId))
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
+    |> raiseIfError
     cts.Cancel() // stops sending events to observers
 
 [<Fact>]
@@ -113,7 +114,7 @@ let ``dispatcher get workflow events`` () =
 
 
 
-type JourneyAgent<'a> = Agent<ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>>
+type JourneyAgent<'a> = Agent<ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,JourneyError>>
 
 type JourneyTestFixture<'a> = {
     CTS: System.Threading.CancellationTokenSource
@@ -135,14 +136,14 @@ let createJourneyFixture<'a> workflow =
       Agent = Journey.start dataStore (fun () -> workflow) broadcastSA guid }
 
 let postAndReplyJ<'a> (agent:JourneyAgent<'a>) = 
-    ResultCommand.newCmd >> agent.PostAndReply >> Result.injectError raise
+    ResultCommand.newCmd >> agent.PostAndReply // >> Result.injectError raise
 
 let processResultJ (checkModel:JourneyModel<'a> -> unit) = function
     | Ok (_,j) -> 
         match j with
         | ActiveJourney jm | TerminatedJourney jm -> checkModel jm
         | NonExistingJourney _ -> raise (exn "journey does not exist")
-    | Error e -> raise e
+    | Error e -> e.ToString() |> exn |> raise
 
 let journeyCreation agent (cts:System.Threading.CancellationTokenSource) journeyId versionedWorkflowId subject =
     { JourneyId = journeyId; VersionedWorkflowId = versionedWorkflowId; Subject = subject } |> CreateJourney
@@ -154,7 +155,7 @@ let journeyCreation agent (cts:System.Threading.CancellationTokenSource) journey
 let ``agent journey creation`` () =
     let wfName = "workflow for agent journey creation"
     let af = createAgentFixture ()
-    CreateWorkflowCommand (af.WorkflowId, wfName) |> CreateWorkflow
+    CommandAPI.createWorkflow af.WorkflowId wfName
     |> postAndReply af.Agent |> ignore
     af.Agent.PostAndReply(fun r -> GetState (af.WorkflowId,0L,r))
     |> processResult (fun wfm -> 
@@ -187,12 +188,9 @@ let ``dispatcher journey creation`` () =
             |> ignore
         | _ -> ())
 
-    CreateWorkflowCommand (workflowId, wfName) |> CreateWorkflow
-    |> postAndReply wfDispatcher.Agent 
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
-    workflowId |> PublishWorkflow
+    CommandAPI.createWorkflow workflowId wfName
     |> postAndReply wfDispatcher.Agent
-    |> Result.injectError(fun e -> raise e)
-    |> ignore
-
+    |> raiseIfError
+    workflowId |> CommandAPI.publishWorkflow
+    |> postAndReply wfDispatcher.Agent
+    |> raiseIfError

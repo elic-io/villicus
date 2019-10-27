@@ -1,8 +1,9 @@
-﻿namespace Villicus
+namespace Villicus
 
 module Serialization =
     open Api.ViewTypes
     open Villicus.Domain
+    open Villicus.Domain.CommandHelpers
     #if FABLE_COMPILER
     open Thoth.Json
     #else
@@ -41,7 +42,7 @@ module Serialization =
       static member Decoder =
         let decodeNamed eventType =
           Decode.map2
-            (fun w n -> {WorkflowId = w; Name = n } |> eventType)
+            (fun w n -> { WorkflowNamedEvent.WorkflowId = w; Name = n } |> eventType)
             (Decode.field "workflowId" WorkflowId.Decoder)
             (Decode.field "name" Decode.string)
         let decodeVersion eventType =
@@ -51,7 +52,7 @@ module Serialization =
             (Decode.field "version" Version.Decoder)
         let decodeStateEdit eventType =
           Decode.map3
-            (fun w s sn -> { WorkflowId=w; StateId=s; StateName=sn } |> eventType)
+            (fun w s sn -> { StateEditEvent.WorkflowId=w; StateId=s; StateName=sn } |> eventType)
             (Decode.field "workflowId" WorkflowId.Decoder)
             (Decode.field "stateId" Decode.uint32)
             (Decode.field "stateName" Decode.string)
@@ -62,7 +63,7 @@ module Serialization =
             (Decode.field "stateId" Decode.uint32)
         let decodeTransitionEdit eventType =
           Decode.map5
-            (fun w t tn ss ts -> { WorkflowId = w; TransitionId = t; TransitionName = tn;
+            (fun w t tn ss ts -> { TransitionEditEvent.WorkflowId = w; TransitionId = t; TransitionName = tn;
                 SourceState = ss; TargetState = ts } |> eventType)
             (Decode.field "workflowId" WorkflowId.Decoder)
             (Decode.field "transitionId" Decode.uint32)
@@ -163,10 +164,10 @@ module Serialization =
         |> Encode.object
 
     type WorkflowCommand with
-      static member Decoder : Decode.Decoder<WorkflowCommand> =
+      static member Decoder : Decode.Decoder<Result<WorkflowCommand,CommandCreationError>> =
         let decodeCreate commandType =
           Decode.map2 
-            (fun workflowId name -> CreateWorkflowCommand(workflowId,name) |> commandType)
+            (fun a b -> newCreateWorkflowCommand a b |> (Result.map commandType))
             (Decode.field "workflowId" WorkflowId.Decoder)
             (Decode.field "name" Decode.string)
         let decodePublish commandType =
@@ -186,38 +187,37 @@ module Serialization =
             | "renameWorkflow" -> decodeCreate RenameWorkflow
             | "copyWorkflow" ->
               Decode.map3
-                (fun source target copyName -> 
-                    CopyWorkflowCommand(source,target,copyName) |> CopyWorkflow)
+                (fun source target copyName -> newCopyWorkflowCommand source target copyName |> (Result.map CopyWorkflow))
                 (Decode.field "source" VersionedWorkflowId.Decoder)
                 (Decode.field "target" WorkflowId.Decoder)
                 (Decode.field "copyName" Decode.string)
-            | "publishWorkflow" -> Decode.field "workflowId" WorkflowId.Decoder |> Decode.map PublishWorkflow
-            | "rePublishWorkflow" -> decodePublish RePublishWorkflow
-            | "withdrawWorkflow" -> decodePublish WithdrawWorkflow
+            | "publishWorkflow" -> Decode.field "workflowId" WorkflowId.Decoder |> Decode.map (PublishWorkflow >> Ok)
+            | "rePublishWorkflow" -> decodePublish (RePublishWorkflow >> Ok)
+            | "withdrawWorkflow" -> decodePublish (WithdrawWorkflow >> Ok)
             | "addState" ->
               Decode.map2
-                (fun workflowId stateName -> AddStateCommand(workflowId,stateName)|> AddState)
+                (fun workflowId stateName -> newAddStateCommand workflowId stateName |> (Result.map AddState))
                 (Decode.field "workflowId" WorkflowId.Decoder)
                 (Decode.field "stateName" Decode.string)
             | "renameState" ->
               Decode.map3
-                (fun workflowId stateId stateName -> EditStateCommand(workflowId,stateId,stateName) |> RenameState)
+                (fun workflowId stateId stateName -> newEditStateCommand workflowId stateId stateName |> (Result.map RenameState))
                 (Decode.field "workflowId" WorkflowId.Decoder)
                 (Decode.field "stateId" Decode.uint32)
                 (Decode.field "stateName" Decode.string)
-            | "dropState" -> decodeState DropState
-            | "setTerminalState" -> decodeState SetTerminalState
-            | "unSetTerminalState" -> decodeState UnSetTerminalState
+            | "dropState" -> decodeState (DropState >> Ok)
+            | "setTerminalState" -> decodeState (SetTerminalState >> Ok)
+            | "unSetTerminalState" -> decodeState (UnSetTerminalState >> Ok)
             | "addTransition" ->
               Decode.map4
-                (fun w tn ss ts -> AddTransitionCommand(w,tn,ss,ts) |> AddTransition)
+                (fun w tn ss ts -> newAddTransitionCommand w tn ss ts  |> (Result.map AddTransition))
                 (Decode.field "workflowId" WorkflowId.Decoder)
                 (Decode.field "transitionName" Decode.string)
                 (Decode.field "sourceState" Decode.uint32)
                 (Decode.field "targetState" Decode.uint32)
             | "editTransition" ->
               Decode.map5
-                (fun w t tn ss ts -> EditTransitionCommand(w,t,tn,ss,ts) |> EditTransition)
+                (fun w t tn ss ts -> newEditTransitionCommand w t tn ss ts |> (Result.map EditTransition))
                 (Decode.field "workflowId" WorkflowId.Decoder)
                 (Decode.field "transitionId" Decode.uint32)
                 (Decode.field "transitionName" Decode.string)
@@ -225,7 +225,7 @@ module Serialization =
                 (Decode.field "targetState" Decode.uint32)
             | "dropTransition" ->
               Decode.map2
-                (fun w t -> DropTransition { WorkflowId = w; TransitionId = t })
+                (fun w t -> { WorkflowId = w; TransitionId = t } |> DropTransition |> Ok)
                 (Decode.field "workflowId" WorkflowId.Decoder)
                 (Decode.field "transitionId" Decode.uint32)
             | s -> 
@@ -234,9 +234,10 @@ module Serialization =
       static member Encoder (x:WorkflowCommand) =
         let commandType,attributes =
           let create t (c:CreateWorkflowCommand) =
+            let (workflowId, name) = createWorkflowCommand c
             t,
-            [ "workFlowId", WorkflowId.Encoder c.WorkflowId
-              "name", Encode.string c.Name ]
+            [ "workFlowId", WorkflowId.Encoder workflowId
+              "name", Encode.string name ]
           let state t (c:StateCommand) =
             t,
             [ "workFlowId", WorkflowId.Encoder c.WorkflowId
@@ -245,10 +246,11 @@ module Serialization =
           | CreateWorkflow c -> create "createWorkflow" c
           | RenameWorkflow c -> create "renameWorkflow" c
           | CopyWorkflow c ->
+            let (source, target, copyName) = copyWorkflowCommand c
             "copyWorkflow",
-            [ "source", VersionedWorkflowId.Encoder c.Source
-              "target", WorkflowId.Encoder c.Target
-              "copyName", Encode.string c.CopyName ]
+            [ "source", VersionedWorkflowId.Encoder source
+              "target", WorkflowId.Encoder target
+              "copyName", Encode.string copyName ]
           | PublishWorkflow c ->
             "publishWorkflow",
             [ "workFlowId", WorkflowId.Encoder c ]
@@ -261,30 +263,34 @@ module Serialization =
             [ "workFlowId", WorkflowId.Encoder c.Id
               "version", Version.Encoder c.Version ]
           | AddState c ->
+            let (workflowId, stateName) = addStateCommand c
             "withdrawWorkflow",
-            [ "workFlowId", WorkflowId.Encoder c.WorkflowId
-              "stateName", Encode.string c.StateName ]
+            [ "workFlowId", WorkflowId.Encoder workflowId
+              "stateName", Encode.string stateName ]
           | RenameState c ->
+            let (workflowId, stateId, stateName) = editStateCommand c
             "renameState",
-            [ "workFlowId", WorkflowId.Encoder c.WorkflowId
-              "stateId", Encode.uint32 c.StateId
-              "stateName", Encode.string c.StateName ]
+            [ "workFlowId", WorkflowId.Encoder workflowId
+              "stateId", Encode.uint32 stateId
+              "stateName", Encode.string stateName ]
           | DropState c -> state "dropState" c
           | SetTerminalState c -> state "setTerminalState" c
           | UnSetTerminalState c -> state "unSetTerminalState" c
           | AddTransition c ->
+            let (workflowId, transitionName, sourceState, targetState) = addTransitionCommand c
             "addTransition",
-            [ "workFlowId", WorkflowId.Encoder c.WorkflowId
-              "transitionName", Encode.string c.TransitionName
-              "sourceState", Encode.uint32 c.SourceState
-              "targetState", Encode.uint32 c.TargetState ]
+            [ "workFlowId", WorkflowId.Encoder workflowId
+              "transitionName", Encode.string transitionName
+              "sourceState", Encode.uint32 sourceState
+              "targetState", Encode.uint32 targetState ]
           | EditTransition c ->
+            let (workflowId, transitionId, transitionName, sourceState, targetState) = editTransitionCommand c
             "editTransition",
-            [ "workFlowId", WorkflowId.Encoder c.WorkflowId
-              "transitionId", Encode.uint32 c.TransitionId
-              "transitionName", Encode.string c.TransitionName
-              "sourceState", Encode.uint32 c.SourceState
-              "targetState", Encode.uint32 c.TargetState ]
+            [ "workFlowId", WorkflowId.Encoder workflowId
+              "transitionId", Encode.uint32 transitionId
+              "transitionName", Encode.string transitionName
+              "sourceState", Encode.uint32 sourceState
+              "targetState", Encode.uint32 targetState ]
           | DropTransition c ->
             "dropTransition",
             [ "workFlowId", WorkflowId.Encoder c.WorkflowId
@@ -348,30 +354,6 @@ module Serialization =
               "versions", x.Versions |> setToArray Version.Encoder
               "directDescendents", x.DirectDescendents |> setToArray WorkflowId.Encoder
               "ancestors", x.Ancestors |> Seq.toArray |> Array.map VersionedWorkflowId.Encoder |> Encode.array ]
-
-    type MaxCountExceededException with
-        static member Encoder (x:MaxCountExceededException) = Encode.Auto.toString (4, x,true)
-    type DuplicateWorkflowIdException with
-        static member Encoder (x:DuplicateWorkflowIdException) = Encode.Auto.toString (4, x,true)
-    type NonExistantWorkflowException with
-        static member Encoder (x:NonExistantWorkflowException) = Encode.Auto.toString (4, x,true)
-    type UndefinedVersionException with
-        static member Encoder (x:UndefinedVersionException) = Encode.Auto.toString (4, x,true)
-    type InvalidWorkflowException with
-        static member Encoder (x:InvalidWorkflowException) = Encode.Auto.toString (4, x,true)
-    type DuplicateStateNameException with
-        static member Encoder (x:DuplicateStateNameException) = Encode.Auto.toString (4, x,true)
-    type UndefinedStateException with
-        static member Encoder (x:UndefinedStateException) = Encode.Auto.toString (4, x,true)
-    type InitialStateException with
-        static member Encoder (x:InitialStateException) = Encode.Auto.toString (4, x,true)
-    type UndefinedTransitionException with
-        static member Encoder (x:UndefinedTransitionException) = Encode.Auto.toString (4, x,true)
-    type DuplicateTransitionException with
-        static member Encoder (x:DuplicateTransitionException) = Encode.Auto.toString (4, x,true)
-    type DuplicateTransitionNameException with
-        static member Encoder (x:DuplicateTransitionNameException) = Encode.Auto.toString (4, x,true)
-
 
     type WorkflowMetaListItem with
         static member Decoder =

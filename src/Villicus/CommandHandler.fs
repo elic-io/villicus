@@ -128,13 +128,13 @@ module Workflow =
     let internal save appendToStream workflowId (expectedVersion:int64) events =
         appendToStream (streamIdString workflowId) expectedVersion events
     
-    let internal processReadStream (rdStrm:ReadStream<WorkflowId,WorkflowEvent,exn>) readStream =
+    let internal processReadStream (rdStrm:ReadStream<WorkflowId,WorkflowEvent,WorkflowError>) readStream =
         let idString = rdStrm.AggregateId |> fun (WorkflowId x) -> x |> streamIdString
         readStream idString rdStrm.FirstEventId rdStrm.BufferSize
         |> Async.map(Ok >> rdStrm.ReplyChannel.Reply) |> Async.Start
 
     let start (eventStore:Persistence.StreamDataStore<string,WorkflowEvent>) sendToObservers workflowId =
-        let getResult version state reply eventResult = async {
+        let getResult version state (reply:Result<(int64*Workflow*WorkflowEvent list),WorkflowError> -> unit) (eventResult:Result<WorkflowEvent list,WorkflowError>) = async {
           match eventResult with
             | Ok eList ->
                 let events = eList |> Seq.ofList
@@ -146,7 +146,7 @@ module Workflow =
                         events |> Seq.iter sendToObservers
                         return (newVersion, newState)
                     | Error e ->
-                        e |> Error |> reply
+                        e |> WorkflowError.unknown (WorkflowId workflowId) |> Error |> reply
                         return (version,state)
             | Error e -> 
                 e |> Error |> reply
@@ -245,7 +245,7 @@ module Journey =
     let inline internal save appendToStream workflowId (expectedVersion:int64) events =
         appendToStream (streamIdString workflowId) expectedVersion events
     
-    let inline internal processReadStream (rdStrm:ReadStream<JourneyId,JourneyEvent<'a>,exn>) readStream =
+    let inline internal processReadStream (rdStrm:ReadStream<JourneyId,JourneyEvent<'a>,WorkflowError>) readStream =
         let idString = rdStrm.AggregateId |> fun (JourneyId x) -> x |> streamIdString
         readStream idString rdStrm.FirstEventId rdStrm.BufferSize
         |> Async.map(Ok >> rdStrm.ReplyChannel.Reply) |> Async.Start
@@ -255,7 +255,7 @@ module Journey =
         Agent.Start<| fun inbox ->
             let rec loop (version,state) = async {
                 let evolve = workflow >> Journey.evolve<'a>
-                let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>) = inbox.Receive()
+                let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,JourneyError>) = inbox.Receive()
                 let eventResult = Journey.handle<'a> (fun _ -> workflow () |> Ok) command.Command state
                 match eventResult with
                 | Ok eList ->
@@ -267,7 +267,7 @@ module Journey =
                         events |> Seq.iter (sendToObservers)
                         return! loop ((version + (Seq.length events |> int64)), newState)
                     | Error e ->
-                        e |> Error |> command.ReplyChannel.Reply
+                        e |> JourneyError.unknown (JourneyId journeyId) |> Error |> command.ReplyChannel.Reply
                         return! loop (version,state)
                 | Error e -> 
                     e |> Error |> command.ReplyChannel.Reply
@@ -286,7 +286,7 @@ module Journey =
             Agent.Start
             <| fun inbox ->
                 let rec loop aggregates = async {
-                    let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,exn>) = inbox.Receive()
+                    let! (command:ResultCommand<JourneyCommand<'a>,int64*Journey<'a>,JourneyError>) = inbox.Receive()
                     let id = Journey.journeyId command.Command
                     match Map.tryFind id aggregates with
                     | Some aggregate ->
@@ -302,10 +302,10 @@ module Journey =
                                 forward aggregate command
                                 return! loop (Map.add id aggregate aggregates)
                             | None ->
-                                "workflow not found" |> exn |> Error |> command.ReplyChannel.Reply
+                                JourneyError.undefinedVersion c.VersionedWorkflowId |> Error |> command.ReplyChannel.Reply
                                 return! loop aggregates
                         | _ -> 
-                            "workflow not found" |> exn |> Error |> command.ReplyChannel.Reply
+                            command.Command |> Journey.journeyId |> JourneyError.nonExistantJourneyId |> Error |> command.ReplyChannel.Reply
                             return! loop aggregates }
                 loop Map.empty
         { Agent = agent
