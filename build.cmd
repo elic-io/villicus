@@ -2,9 +2,9 @@
 cls
 
 IF EXIST "paket.lock" (
-  .paket\paket.exe restore
+  paket restore
 ) ELSE (
-  .paket\paket.exe install
+  paket install
 )
 
 if errorlevel 1 (

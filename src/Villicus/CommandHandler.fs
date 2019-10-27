@@ -20,18 +20,19 @@ type ReadStream<'aggregateId,'event,'error> = {
 type ResultCommand<'command,'state,'error> = {
     Command: 'command
     ReplyChannel: AsyncReplyChannel<Result<'state,'error>> }
-  with
-    static member New replyChannel command = {
+  //with
+  //  static member New replyChannel command = {
+  //      Command = command
+  //      ReplyChannel = replyChannel }
+
+module ResultCommand =
+    let inline newCmd command replyChannel = {
         Command = command
         ReplyChannel = replyChannel }
 
 type ResultCommandStream<'command,'event,'error> = {
     Command: 'command
     ReplyChannel: AsyncReplyChannel<Result<int64 * 'event list,'error>> }
-  with
-    static member New replyChannel command = {
-        Command = command
-        ReplyChannel = replyChannel }
 
 type WFCommand<'command,'event,'aggregateId,'state,'error> =
 | GetState of aggregateId:'aggregateId * version:System.Int64 * replyChannel:AsyncReplyChannel<Result<'state,'error>>
@@ -39,6 +40,16 @@ type WFCommand<'command,'event,'aggregateId,'state,'error> =
 | ReadStream of ReadStream<'aggregateId,'event,'error>
 | ResultCommand of ResultCommand<'command,'state,'error>
 | ResultCommandStream of ResultCommandStream<'command,'event,'error>
+
+module WFCommand =
+    let inline newCmd command replyChannel = ResultCommand { Command = command; ReplyChannel = replyChannel }
+    let inline newCommandStream command replyChannel = ResultCommandStream { Command = command; ReplyChannel = replyChannel }
+    let inline newReadStream aggregateId firstEventId bufferSize replyChannel =
+        { AggregateId = aggregateId
+          FirstEventId = firstEventId
+          BufferSize = bufferSize
+          ReplyChannel = replyChannel }
+        |> ReadStream
 
 type VersionType =
 | WorkflowVersion of Version
@@ -67,6 +78,9 @@ module Common =
             | Some n ->
                 return! stream n }
         stream startVersion
+
+    let getState aggregateId version replyChannel =
+        GetState (aggregateId,version,replyChannel)
 
 
 module Workflow =
@@ -120,8 +134,26 @@ module Workflow =
         |> Async.map(Ok >> rdStrm.ReplyChannel.Reply) |> Async.Start
 
     let start (eventStore:Persistence.StreamDataStore<string,WorkflowEvent>) sendToObservers workflowId =
-        Agent.Start<| fun inbox ->
+        let getResult version state reply eventResult = async {
+          match eventResult with
+            | Ok eList ->
+                let events = eList |> Seq.ofList
+                match! save eventStore.AppendToStream workflowId version events with
+                    | Ok (_:unit) ->
+                        let newState = Seq.fold Workflow.evolve state events
+                        let newVersion = version + (Seq.length events |> int64)
+                        (newVersion,newState,eList) |> Ok |> reply
+                        events |> Seq.iter sendToObservers
+                        return (newVersion, newState)
+                    | Error e ->
+                        e |> Error |> reply
+                        return (version,state)
+            | Error e -> 
+                e |> Error |> reply
+                return (version,state) }
+        Agent.Start <| fun inbox ->
             let rec loop (version,state) = async {
+                let getResult = getResult version state
                 match! inbox.Receive() with
                 | GetState ((WorkflowId workflowId),ver,replyChannel) ->
                     match ver = version || ver = 0L with
@@ -144,41 +176,11 @@ module Workflow =
                     processReadStream rdStrm eventStore.ReadStream
                     return! loop (version,state)
                 | ResultCommand command ->
-                    let eventResult = Workflow.handle command.Command state
-                    match eventResult with
-                    | Ok eList ->
-                        let events = eList |> Seq.ofList
-                        match! save eventStore.AppendToStream workflowId version events with
-                            | Ok (_:unit) ->
-                                let newState = Seq.fold Workflow.evolve state events
-                                let newVersion = version + (Seq.length events |> int64)
-                                (newVersion,newState) |> Ok |> command.ReplyChannel.Reply
-                                events |> Seq.iter sendToObservers
-                                return! loop (newVersion, newState)
-                            | Error e ->
-                                e |> Error |> command.ReplyChannel.Reply
-                                return! loop (version,state)
-                    | Error e -> 
-                        e |> Error |> command.ReplyChannel.Reply
-                        return! loop (version,state)
+                    let replyFunc = ((Result.map (fun (newVersion,newState,_) -> (newVersion,newState))) >> command.ReplyChannel.Reply)
+                    return! state |> Workflow.handle command.Command |> getResult replyFunc |> Async.bind loop
                 | ResultCommandStream command ->
-                    let eventResult = Workflow.handle command.Command state
-                    match eventResult with
-                    | Ok eList ->
-                        let events = eList |> Seq.ofList
-                        match! save eventStore.AppendToStream workflowId version events with
-                            | Ok (_:unit) ->
-                                let newState = Seq.fold Workflow.evolve state events
-                                let newVersion = version + (Seq.length events |> int64)
-                                (newVersion,eList) |> Ok |> command.ReplyChannel.Reply
-                                events |> Seq.iter sendToObservers
-                                return! loop (newVersion, newState)
-                            | Error e ->
-                                e |> Error |> command.ReplyChannel.Reply
-                                return! loop (version,state)
-                    | Error e -> 
-                        e |> Error |> command.ReplyChannel.Reply
-                        return! loop (version,state)
+                    let replyFunc = ((Result.map (fun (newVersion,_,eList) -> (newVersion,eList))) >> command.ReplyChannel.Reply)
+                    return! state |> Workflow.handle command.Command |> getResult replyFunc |> Async.bind loop
                 }
             load eventStore.ReadStream (EventId 0L) takeUpTo (streamIdString workflowId) |> Async.bind loop
 

@@ -7,13 +7,13 @@ module MemoryRepository =
     /// It's inefficient
     /// It also only supports int32 event addresses
     /// But that's OK it's really just a mock/sample implementation for testing and development
-    let readItem (store:ConcurrentDictionary<'a,'b>) itemId =
+    let private readItem (store:ConcurrentDictionary<'a,'b>) itemId =
         match store.TryGetValue itemId with
         | false, _ -> None 
         | true, value -> value |> Some
         |> Async.result
 
-    let addOrUpdateItem (store: ConcurrentDictionary<'a,'b>) itemId newValue =
+    let private addOrUpdateItem (store: ConcurrentDictionary<'a,'b>) itemId newValue =
         // AddOrUpdate returns the same type as input, so we have to raise the exception to
         // then catch it and pass the error type back out
         // unless we wanted to store Result type, which we don't
@@ -23,9 +23,17 @@ module MemoryRepository =
         with
             | e -> Error e
         |> Async.result
+
+    let private retrieveItems (store: ConcurrentDictionary<'a,'b>) (filter: 'a -> 'b -> bool) = async {
+        let filterConv (kvp:System.Collections.Generic.KeyValuePair<'a,'b>) =
+            filter kvp.Key kvp.Value
+        return
+            Seq.filter filterConv store
+            |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
+            |> Map.ofSeq }
     
-    let create<'a,'b> () =
+    let create<'a,'b when 'a : comparison> () =
         let store = ConcurrentDictionary<'a,'b> ()
         { Retrieve = readItem store
-          RetrieveAll = store.Values |> Seq.map id |> Async.result
+          RetrieveItems = retrieveItems store
           Save = addOrUpdateItem store }
