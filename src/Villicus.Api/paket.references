@@ -2,3 +2,5 @@ group Server
     FSharp.Core
     Suave
     Thoth.Json.Net
+    Saturn
+    Thoth.Json.Giraffe    
