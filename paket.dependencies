@@ -6,16 +6,16 @@ generate_load_scripts: true
 
 group Server
   source https://api.nuget.org/v3/index.json
-  framework: netcoreapp2.2
+  framework: netcoreapp3.0
   storage: none
 
-  nuget FSharp.Core ~> 4.6.0 redirects: force
+  nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Newtonsoft.Json
   nuget suave
   nuget System.Reactive
   nuget Saturn
   nuget Thoth.Json.Giraffe
-  nuget Thoth.Json.Net ~> 2
+  nuget Thoth.Json.Net
   github haf/YoLo YoLo.fs
   nuget Fable.JsonConverter
   # nuget Microsoft.Extensions.Caching.Memory
@@ -25,7 +25,7 @@ group Client
   framework: netstandard2.0
   storage: none
 
-  nuget FSharp.Core ~> 4.6.0 redirects: force
+  nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Fable.Core ~> 2
   nuget Fable.Elmish ~> 2
   nuget Thoth.Json ~> 2
@@ -44,7 +44,7 @@ group Build
   framework: netstandard2.0
   storage: none
   
-  nuget FSharp.Core ~> 4.6.0 redirects: force
+  nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Fake.Core.Target
   nuget Fake.DotNet.Cli
   nuget Fake.IO.FileSystem
@@ -53,10 +53,11 @@ group Build
 
 group Test
   source https://api.nuget.org/v3/index.json
-  framework: netcoreapp2.2
+  framework: netcoreapp3.0
   storage: none
   
-  nuget FSharp.Core ~> 4.6.0 redirects: force
+  nuget FSharp.Core ~> 4.7.0 redirects: force
+  nuget Thoth.Json.Net
   nuget Microsoft.NET.Test.Sdk
   nuget xunit ~> 2.4
   nuget xunit.runner.visualstudio ~> 2.4

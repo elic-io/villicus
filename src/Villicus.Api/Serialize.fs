@@ -164,7 +164,7 @@ module Serialization =
         |> Encode.object
 
     type WorkflowCommand with
-      static member Decoder : Decode.Decoder<Result<WorkflowCommand,CommandCreationError>> =
+      static member Decoder =
         let decodeCreate commandType =
           Decode.map2 
             (fun a b -> newCreateWorkflowCommand a b |> (Result.map commandType))

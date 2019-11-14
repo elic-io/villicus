@@ -9,11 +9,12 @@ open Thoth.Json.Net
 #endif
 
 type APIError =
-    | WorkflowError of WorkflowError
     | Unknown of exn
     | NotFound of System.Guid
-    | BadRequest of exn
+    | BadRequest of string
     | InvalidUUID of string
+    | CommandCreation of CommandCreationError
+    | WorkflowError of WorkflowError
 
 
 
@@ -108,7 +109,7 @@ let processCommand =
             WorkflowError))
     >> function
     | Ok x -> x
-    | Error e -> e |> CommandCreationError.ToExn |> BadRequest |> Error |> Task.FromResult
+    | Error e -> e |> APIError.CommandCreation |> Error |> Task.FromResult
 
 let postText (ctx:HttpContext) =
     use body = new System.IO.StreamReader(ctx.Request.Body)
@@ -120,7 +121,7 @@ let sendCommand : HttpContext -> Task<Result<HttpHandler,APIError>> = fun (ctx:H
     ctx |> postText |> Decode.fromString WorkflowCommand.Decoder
     |> function
         | Ok x -> processCommand x
-        | Error e -> e |> exn |> BadRequest |> Error |> Task.FromResult
+        | Error e -> e |> BadRequest |> Error |> Task.FromResult
 
 let appendIdandSend (wfid:System.Guid) = fun (ctx:HttpContext) ->
     let o =
@@ -129,7 +130,7 @@ let appendIdandSend (wfid:System.Guid) = fun (ctx:HttpContext) ->
     WorkflowCommand.Decoder "" o
     |> function
         | Ok x -> processCommand x
-        | Error err -> err.ToString() |> exn |> BadRequest |> Error |> Task.FromResult
+        | Error err -> err.ToString() |> BadRequest |> Error |> Task.FromResult
 
 let getEvents wfid : (HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (ctx:HttpContext) ->
     let options = getOptions ctx
@@ -217,19 +218,24 @@ let getWorkflow wfid = fun (_:HttpContext) ->
 
 let formatErrors (f: HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (next:HttpFunc) (ctx:HttpContext) ->
     let errorContent = setHttpHeader "Content-Type" "text/plain; charset=UTF-8"
+    let ccErrorToResponse ccError =
+        match ccError with
+        | NullArgument errMsg -> errMsg
+        | CantTargetSelf errMsg -> errMsg
+        |> RequestErrors.BAD_REQUEST
+
     ctx |> f |> Task.bind(
         Result.mapError(function
             | Unknown e -> ServerErrors.INTERNAL_ERROR e.Message
             | NotFound guid -> guid.ToString() |> sprintf "WorkflowId '%s' not found" |> RequestErrors.NOT_FOUND
-            | BadRequest e -> RequestErrors.BAD_REQUEST e.Message
+            | BadRequest e -> RequestErrors.BAD_REQUEST e
             | InvalidUUID guidStr -> guidStr |> sprintf "'%s' is not a valid UUID" |> RequestErrors.BAD_REQUEST
+            | CommandCreation ccError ->
+                ccErrorToResponse ccError
             | WorkflowError wfe ->
                 match wfe with
-                | CommandCreation ccError ->
-                    match ccError with
-                    | NullArgument errMsg -> errMsg
-                    | CantTargetSelf errMsg -> errMsg
-                    |> RequestErrors.BAD_REQUEST
+                | WorkflowError.CommandCreation ccError ->
+                    ccErrorToResponse ccError
                 | MaxCountExceeded maxCountError ->
                     RequestErrors.UNPROCESSABLE_ENTITY maxCountError.Message
                 | Duplicate workflowId ->
