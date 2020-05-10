@@ -1,14 +1,7 @@
-@echo off
-cls
+echo installing needed dotnet version
+dotnet-install.ps1 -JSonFile global.json
 
-IF EXIST "paket.lock" (
-  paket restore
-) ELSE (
-  paket install
-)
+echo Restoring dotnet tools...
+dotnet tool restore
 
-if errorlevel 1 (
-  exit /b %errorlevel%
-)
-dotnet restore build.proj
-dotnet fake build %*
+dotnet fake build -t %*
