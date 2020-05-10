@@ -54,7 +54,7 @@ let ``EditTransitionCommand duplicate states`` () =
 
 let handleEvolve command state =
     Workflow.handle command state
-    |> Result.map (List.fold Workflow.evolve state)
+    |> Result.map (Seq.fold Workflow.evolve state)
 
 let processCmd command wf =
     command
@@ -76,8 +76,8 @@ let ``workflow creation`` () =
     |> Result.map2  CreateWorkflow CommandCreation
     |> Result.bind (fun x -> Workflow.handle x None)
     |> Result.map (fun events -> 
-        Assert.Equal(4,events.Length)
-        List.fold Workflow.evolve None events)
+        Assert.Equal(4, Seq.length events)
+        Seq.fold Workflow.evolve None events)
     |> Result.map(fun wf -> Assert.True(wf.IsSome); wf)
     |> Result.map (Option.map (fun x ->
                 Assert.Equal(testWorkFlowName,x.Name)
@@ -152,7 +152,7 @@ let ``republish a published version generates empty event set`` () =
                 Version = p.PublishedVersions |> Set.toSeq |> Seq.head }
             published
             |> Result.bind (Workflow.handle (RePublishWorkflow pubVersionId))
-            |> Result.map(fun events -> Assert.True(events |> List.isEmpty))))
+            |> Result.map(fun events -> Assert.True(Seq.isEmpty events))))
     |> raiseIfError
 
 [<Fact>]
@@ -309,12 +309,12 @@ let ``copy Workflow`` () =
         copyCmd
         |> Result.bind (fun c -> Workflow.handle c wf)
     let events = testWorkflow |> Result.bind handleResult
-    let origEvents = events |> Result.map(List.filter(fun e -> oldWorkflow.WorkflowId = Workflow.eWorkflowId e ))
-    let copyEvents = events |> Result.map(List.filter(fun e -> oldWorkflow.WorkflowId <> Workflow.eWorkflowId e ))
+    let origEvents = events |> Result.map(Seq.filter(fun e -> oldWorkflow.WorkflowId = Workflow.eWorkflowId e ))
+    let copyEvents = events |> Result.map(Seq.filter(fun e -> oldWorkflow.WorkflowId <> Workflow.eWorkflowId e ))
     testWorkflow |> Result.bind(fun state ->
-        origEvents |> Result.map (List.fold Workflow.evolve state))
+        origEvents |> Result.map (Seq.fold Workflow.evolve state))
     |> Result.map(fun origWF ->
-        copyEvents |> Result.map (List.fold Workflow.evolve None)
+        copyEvents |> Result.map (Seq.fold Workflow.evolve None)
         |> Result.map(
             origWF |>
                 ((fun o n ->
@@ -375,7 +375,7 @@ let ``set terminal state that is already terminal generates no events`` () =
     |> processCmd (addState testWorkflowId "New Terminal")
     |> processCmd (setTerminalState testWorkflowId 2u)
     |> Result.bind(Workflow.handle (SetTerminalState { WorkflowId = testWorkflowId; StateId = 2u }))
-    |> Result.map(List.isEmpty >> Assert.True)
+    |> Result.map(Seq.isEmpty >> Assert.True)
     |> raiseIfError
 
 [<Fact>]
@@ -404,7 +404,7 @@ let ``unset terminal state that is not terminal generates no events`` () =
     testWorkflow
     |> processCmd (unSetTerminalState testWorkflowId 1u)
     |> Result.bind(Workflow.handle (UnSetTerminalState { WorkflowId = testWorkflowId; StateId = 1u }))
-    |> Result.map(List.isEmpty >> Assert.True)
+    |> Result.map(Seq.isEmpty >> Assert.True)
     |> raiseIfError
 
 [<Fact>]

@@ -73,7 +73,7 @@ let handleEvolve command state =
     |> Result.bind(fun workflow ->
         state
         |> Journey.handle lookup command
-        |> Result.map (List.fold (Journey.evolve workflow) state))
+        |> Result.map (Seq.fold (Journey.evolve workflow) state))
 
 let processCmd command = handleEvolve command |> Result.bind
 

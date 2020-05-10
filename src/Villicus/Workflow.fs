@@ -1,6 +1,6 @@
 namespace Villicus.Domain
 
-open Villicus.Common
+// open Villicus.Common
 
 type TransitionId = uint32
 type StateId = uint32
@@ -29,7 +29,13 @@ type Version =
     with
     member x.Inc = x |> (fun (Version i) -> i+1UL |> Version)
     
-type VersionedWorkflowId = { Id: WorkflowId; Version: Version }
+type VersionedWorkflowId =
+        { Id: WorkflowId; Version: Version }
+    with
+        static member Decompose (x:VersionedWorkflowId) =
+            let (Version version) = x.Version
+            (x.Id,version)
+
 type WorkflowEvent =
 | WorkflowCreated of WorkflowNamedEvent
 | WorkflowRenamed of WorkflowNamedEvent
@@ -580,7 +586,7 @@ module Workflow =
         |> ifTransitionExists command.TransitionId
         |> bindExists command.WorkflowId
 
-    let handle = 
+    let handle cmd workflow = 
         function
         | CreateWorkflow command -> createWorkflow command
         | RenameWorkflow command -> renameWorkflow command
@@ -596,6 +602,7 @@ module Workflow =
         | AddTransition command -> addTransition command
         | EditTransition command -> editTransition command
         | DropTransition command -> dropTransition command
+        |> (fun f -> f cmd workflow |> (Result.map List.toSeq))
 
     let evolve (state:Workflow) event : Workflow =
         let createNew workflowId name =
@@ -683,3 +690,16 @@ module Workflow =
             let s' = remTransition e.TransitionId s
             Some { s' with Transitions = s.Transitions |> Map.remove e.TransitionId }
         ev (state,event)
+
+    type CommandProcessor<'eventId> =
+        Sentinam.CommandProcessor<Workflow,WorkflowId,WorkflowCommand,WorkflowEvent,'eventId,WorkflowError> 
+
+    type ReadStreamReply<'eventId> = Sentinam.ReadStreamReply<WorkflowEvent,'eventId,WorkflowError>
+
+    type ReadStream<'eventId> = Sentinam.ReadStream<WorkflowId,WorkflowEvent,'eventId,WorkflowError>
+
+    type Envelope<'eventId> = Sentinam.Envelope<WorkflowCommand,WorkflowEvent,'eventId,WorkflowId,Workflow,WorkflowError>
+
+    type ResultCommand<'eventId> = Sentinam.ResultCommand<WorkflowCommand,Workflow,'eventId,WorkflowError>
+
+

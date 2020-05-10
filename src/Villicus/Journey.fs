@@ -36,8 +36,10 @@ type Journey<'t> with
         |> NonExistingJourney
 
 type Published<'a> =
-| Published of 'a
-| Withdrawn of 'a
+        | Published of 'a
+        | Withdrawn of 'a
+    with
+        member x.Workflow = match x with | Published x' | Withdrawn x' -> x'
 
 type JourneyException (message, journeyId) = 
     inherit exn(sprintf "Error for %O: %s" journeyId message)
@@ -135,7 +137,7 @@ module Journey =
                 |> Result.map(List.append [ ReActivated command.JourneyId ])
         |> bindJourneyState command.JourneyId
 
-    let handle<'t> workflowLookup =
+    let handle<'t> workflowLookup cmd journey =
         let bindLookup journeyId commandHandler journeyState =
             toResult journeyId journeyState
             |> Result.bind (fun jm -> workflowLookup jm.Workflow)
@@ -144,6 +146,7 @@ module Journey =
         | CreateJourney command -> createJourney<'t> workflowLookup command
         | TransitionCommand command -> transition<'t> command |> bindLookup command.JourneyId
         | ReActivate command -> reActivate<'t> command |> bindLookup command.JourneyId
+        |> (fun f -> f cmd journey |> (Result.map List.toSeq))
 
     let evolve<'t> (workflow:WorkflowModel) (state:Journey<'t>) (event:JourneyEvent<'t>) =
         let ev =
@@ -164,3 +167,15 @@ module Journey =
           | ActiveJourney s, _ -> ActiveJourney s
           | TerminatedJourney s, _ -> TerminatedJourney s
         ev (state,event)
+
+
+    type CommandProcessor<'t,'eventId> =
+        Sentinam.CommandProcessor<Journey<'t>,JourneyId,JourneyCommand<'t>,JourneyEvent<'t>,'eventId,JourneyError> 
+
+    type ReadStreamReply<'t,'eventId> = Sentinam.ReadStreamReply<JourneyEvent<'t>,'eventId,JourneyError>
+
+    type ReadStream<'t,'eventId> = Sentinam.ReadStream<JourneyId,JourneyEvent<'t>,'eventId,JourneyError>
+
+    type Envelope<'t,'eventId> = Sentinam.Envelope<JourneyCommand<'t>,JourneyEvent<'t>,'eventId,JourneyId,Journey<'t>,JourneyError>
+
+    type ResultCommand<'t,'eventId> = Sentinam.ResultCommand<JourneyCommand<'t>,Journey<'t>,'eventId,JourneyError>
