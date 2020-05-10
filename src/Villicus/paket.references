@@ -3,3 +3,5 @@ group Server
     Newtonsoft.Json
     # Microsoft.Extensions.Caching.Memory
     System.Reactive
+    Sentinam
+    Sentinam.Persistence.Memory

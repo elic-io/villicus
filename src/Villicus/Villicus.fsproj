@@ -6,15 +6,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Observable.fs" />
-    <Compile Include="../../paket-files/haf/YoLo/YoLo.fs" />
+    <Compile Include="../../paket-files/server/haf/YoLo/YoLo.fs" />
     <Compile Include="ResultBuilder.fs" />
     <Compile Include="Common.fs" />
-    <Compile Include="Persistence.fs" />
     <Compile Include="Workflow.fs" />
     <Compile Include="Journey.fs" />
-    <Compile Include="CommandHandler.fs" />
-    <Compile Include="MemoryStore.fs" />
-    <Compile Include="MemoryRepository.fs" />
+    <Compile Include="CommandHandlers.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

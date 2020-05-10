@@ -11,12 +11,12 @@ module Serialization =
     #endif
 
     type Transition with
-        static member Encoder (x:Transition) = Encode.Auto.toString (4, x,true)
-        static member Decoder = Decode.Auto.generateDecoder<Transition>(true)
+        static member Encoder (x:Transition) = Encode.Auto.toString (4, x,CamelCase)
+        static member Decoder = Decode.Auto.generateDecoder<Transition>(CamelCase)
 
     type State with
-        static member Encoder (x:State) = Encode.Auto.toString (4, x,true)
-        static member Decoder = Decode.Auto.generateDecoder<State>(true)
+        static member Encoder (x:State) = Encode.Auto.toString (4, x,CamelCase)
+        static member Decoder = Decode.Auto.generateDecoder<State>(CamelCase)
 
     type WorkflowId with
         static member Encoder (WorkflowId x) = Encode.guid x

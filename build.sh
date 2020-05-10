@@ -1,43 +1,12 @@
 #!/usr/bin/env bash
 
 set -eu
+set -o pipefail
 
-cd "$(dirname "$0")"
+echo "installing needed dotnet version"
+. ./dotnet-install.sh --jsonfile global.json
 
-PAKET_EXE=.paket/paket.exe
-FAKE_EXE=packages/build/FAKE/tools/FAKE.exe
+echo "Restoring dotnet tools..."
+dotnet tool restore
 
-FSIARGS=""
-FSIARGS2=""
-OS=${OS:-"unknown"}
-if [ "$OS" != "Windows_NT" ]
-then
-  # Can't use FSIARGS="--fsiargs -d:MONO" in zsh, so split it up
-  # (Can't use arrays since dash can't handle them)
-  FSIARGS="--fsiargs"
-  FSIARGS2="-d:MONO"
-fi
-
-run() {
-  if [ "$OS" != "Windows_NT" ]
-  then
-    mono "$@"
-  else
-    "$@"
-  fi
-}
-
-echo "Executing Paket..."
-
-FILE='paket.lock'     
-if [ -f $FILE ]; then
-   echo "paket.lock file found, restoring packages..."
-   run $PAKET_EXE restore
-else
-   echo "paket.lock was not found, installing packages..."
-   run $PAKET_EXE install
-fi
-dotnet restore build.proj
-dotnet fake build %*
-
-
+PAKET_SKIP_RESTORE_TARGETS=true FAKE_DETAILED_ERRORS=true dotnet fake build -t "$@"

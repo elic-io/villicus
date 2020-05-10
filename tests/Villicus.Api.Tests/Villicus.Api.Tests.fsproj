@@ -2,10 +2,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\paket-files\haf\YoLo\YoLo.fs" />
+    <Compile Include="..\..\paket-files\server\haf\YoLo\YoLo.fs" />
     <Compile Include="SerializeTests.fs" />
   </ItemGroup>
   <ItemGroup>

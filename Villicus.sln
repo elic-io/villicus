@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26124.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29806.167
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{9F21FB1C-B05A-4718-85ED-C2F339047369}"
 EndProject
@@ -13,9 +13,9 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Villicus.Tests", "tests\Vil
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Villicus.Api", "src\Villicus.Api\Villicus.Api.fsproj", "{BD1FC217-0F8B-496A-AFCE-502533C13091}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Villicus.Api.Tests", "tests\Villicus.Api.Tests\Villicus.Api.Tests.fsproj", "{BC8A1D22-5F55-4475-92C6-46D8833F3984}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Villicus.Api.Tests", "tests\Villicus.Api.Tests\Villicus.Api.Tests.fsproj", "{BC8A1D22-5F55-4475-92C6-46D8833F3984}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Client", "src\Client\Client.fsproj", "{F6DC4BED-F3A8-4F2D-831A-07FBB5115002}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Client", "src\Client\Client.fsproj", "{F6DC4BED-F3A8-4F2D-831A-07FBB5115002}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

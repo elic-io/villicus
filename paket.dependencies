@@ -1,13 +1,12 @@
-version 5.216
+version 5.241.2
 source https://api.nuget.org/v3/index.json
+source https://www.nuget.org/api/v2
 storage: none
-clitool dotnet-fake
-generate_load_scripts: true
 
 group Server
-  source https://api.nuget.org/v3/index.json
-  framework: netcoreapp3.0
   storage: none
+  source https://api.nuget.org/v3/index.json
+  source https://www.nuget.org/api/v2
 
   nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Newtonsoft.Json
@@ -18,12 +17,13 @@ group Server
   nuget Thoth.Json.Net
   github haf/YoLo YoLo.fs
   nuget Fable.JsonConverter
-  # nuget Microsoft.Extensions.Caching.Memory
+  nuget Sentinam
+  nuget Sentinam.Persistence.Memory
 
 group Client
-  source https://api.nuget.org/v3/index.json
-  framework: netstandard2.0
   storage: none
+  source https://api.nuget.org/v3/index.json
+  source https://www.nuget.org/api/v2
 
   nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Fable.Core ~> 2
@@ -38,24 +38,37 @@ group Client
   nuget Fable.FontAwesome.Free
   clitool dotnet-fable
 
+// [ FAKE GROUP ]
 group Build
+  storage: none
   source https://api.nuget.org/v3/index.json
   source https://www.nuget.org/api/v2
-  framework: netstandard2.0
-  storage: none
-  
+
   nuget FSharp.Core ~> 4.7.0 redirects: force
-  nuget Fake.Core.Target
-  nuget Fake.DotNet.Cli
-  nuget Fake.IO.FileSystem
   nuget FSharp.Formatting
   # github fsharp/FAKE modules/Octokit/Octokit.fsx
+  nuget Fake.IO.FileSystem ~> 5.19.0
+  nuget Fake.Core.Target ~> 5.19.0
+  nuget Fake.Core.ReleaseNotes ~> 5.19.0
+  nuget FAKE.Core.Environment ~> 5.19.0
+  nuget Fake.DotNet.Cli ~> 5.19.0
+  nuget FAKE.Core.Process ~> 5.19.0
+  nuget Fake.DotNet.AssemblyInfoFile ~> 5.19.0
+  nuget Fake.Tools.Git ~> 5.19.0
+  nuget Fake.DotNet.Paket ~> 5.19.0
+  nuget Fake.Api.GitHub ~> 5.19.0
+  nuget Fake.BuildServer.AppVeyor ~> 5.19.0
+  nuget Fake.BuildServer.Travis ~> 5.19.0
+  nuget Fantomas
+  nuget Argu
+
+
 
 group Test
-  source https://api.nuget.org/v3/index.json
-  framework: netcoreapp3.0
   storage: none
-  
+  source https://api.nuget.org/v3/index.json
+  source https://www.nuget.org/api/v2
+
   nuget FSharp.Core ~> 4.7.0 redirects: force
   nuget Thoth.Json.Net
   nuget Microsoft.NET.Test.Sdk

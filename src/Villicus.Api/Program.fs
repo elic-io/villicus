@@ -1,6 +1,6 @@
+open Sentinam.Persistence.Memory
 open Villicus
 open Villicus.Domain
-open Villicus.CommandHandlers
 open Villicus.Serialization
 #if FABLE_COMPILER
 open Thoth.Json
@@ -25,17 +25,26 @@ let storeNames save =
     | _ -> None
     >> Option.iter (fun (a,b) -> save a b |> ignore)
 
-let repo = Persistence.MemoryRepository.create<VersionedWorkflowId,Published<WorkflowModel>> ()
-let workFlowByNameRepo = Persistence.MemoryRepository.create<WorkflowId,string> ()
-let wfDispatcher = 
-    let dispatcher = Persistence.MemoryEventStore.create<string,WorkflowEvent> () |> Workflow.createDispatcher 0
-    Workflow.versionProjection dispatcher repo.Save
-    Observable.add (storeNames workFlowByNameRepo.Save) dispatcher.Observable
-    dispatcher.Agent
+let repo = MemoryRepository.create<VersionedWorkflowId,Published<WorkflowModel>> ()
+let workFlowByNameRepo = MemoryRepository.create<WorkflowId,string> ()
+
+
+let cts = new System.Threading.CancellationTokenSource ()
+
+let wfDispatcher =
+    let memStore = MemoryEventStore.create<string,WorkflowEvent,uint64> ()
+    let observable,broadcast = Observable.createObservableAgent<WorkflowEvent> 500 cts.Token
+
+    let dispatcher =
+        CommandHandlers.Workflow.createDispatcherAgent broadcast cts.Token memStore
+    observable.Add (CommandHandlers.Workflow.versionProjection dispatcher repo.Save)
+    //CommandHandlers2.Workflow.versionProjection dispatcher repo.Save
+    Observable.add (storeNames workFlowByNameRepo.Save) observable
+    dispatcher
 
 let jDispatcher =
-    let es = Persistence.MemoryEventStore.create<string,JourneyEvent<System.Guid>> ()
-    Journey.createDispatcher 0 es repo
+    let es = MemoryEventStore.create<string,JourneyEvent<System.Guid>,uint64> ()
+    CommandHandlers.Journey.createDispatcherAgent es cts.Token (fun _ -> ())  repo
 
 
 open Saturn
@@ -53,10 +62,10 @@ let getOptions (ctx:HttpContext) =
     ctx.Request.Query
     |> Seq.map (fun kvp -> kvp.Value |> Seq.head |> (fun v' -> (kvp.Key.ToLower(),v'))) |> Map.ofSeq
 
-let getIntOption (name:string) (minVal:int64) (maxVal:int64) (defaultVal:int64) options =
+let getIntOption (name:string) (minVal:uint64) (maxVal:uint64) (defaultVal:uint64) options =
     match options |> Map.tryFind (name.ToLower()) with
     //todo: validate pagesize ?
-    | Some (s:string) -> match System.Int64.TryParse(s) with | true,n -> n | _ -> defaultVal
+    | Some (s:string) -> match System.UInt64.TryParse(s) with | true,n -> n | _ -> defaultVal
     | None -> defaultVal
     |> fun x -> System.Math.Max(minVal,System.Math.Min(x,maxVal))
 
@@ -74,12 +83,12 @@ let linkheader offSt pgSize rel = fun (next:HttpFunc) (ctx:HttpContext) ->
     next ctx
 
 let pagingHeaders pageSize eventIndex nextEventId = fun (nextFunc:HttpFunc) (ctx:HttpContext) ->
-    let priorId = System.Math.Max(0L,eventIndex - (int64 pageSize))
+    let priorId = System.Math.Max(0UL,eventIndex - (uint64 pageSize))
     let prev = linkheader priorId pageSize "prev"
-    let first = linkheader 0L pageSize "first"
+    let first = linkheader 0UL pageSize "first"
     let next nextId = linkheader nextId pageSize "next"
     match eventIndex,nextEventId with
-    | (0L,None) -> first
+    | (0UL,None) -> first
     | (_,Some nextId) -> first >=> prev >=> next nextId
     | (_,None) -> first >=> prev
     |> (fun f -> f nextFunc ctx)
@@ -94,15 +103,15 @@ module Task =
 
 let processCommand =
     Result.map (
-        WFCommand.newCommandStream
+        Sentinam.Envelope.newCommandStream
         >> wfDispatcher.PostAndAsyncReply
         >> Async.StartAsTask
         >> Task.map(
           Result.map2
             (fun (eventIndex,eventList) ->
                 (eventList
-                |> List.map (WorkflowEvent.Encoder)
-                |> Encode.list
+                |> Seq.map (WorkflowEvent.Encoder)
+                |> Encode.seq
                 |> Encode.toString 4
                 |> Successful.CREATED)     
                 >=> (eventIndex |> string |> setHttpHeader "Etag"))
@@ -135,77 +144,53 @@ let appendIdandSend (wfid:System.Guid) = fun (ctx:HttpContext) ->
 let getEvents wfid : (HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (ctx:HttpContext) ->
     let options = getOptions ctx
     let pageSize = 
-        let pgSize = getIntOption "pagesize" 10L 100L 50L options
+        let pgSize = getIntOption "pagesize" 10UL 100UL 50UL options
         System.Convert.ToInt32(pgSize) // don't need to catch exn because we know it is in range 10-50
-    let offSet = options |> getIntOption "offset" 0L System.Int64.MaxValue 0L
-    let postMsg = WFCommand.newReadStream (WorkflowId wfid) offSet pageSize
+    let offSet = options |> getIntOption "offset" 0UL System.UInt64.MaxValue 0UL
+    let postMsg = Sentinam.Envelope.newReadStream (WorkflowId wfid) offSet pageSize
     wfDispatcher.PostAndAsyncReply postMsg
     |> Async.StartAsTask
     |> Task.map(
         Result.mapError WorkflowError
         >> Result.bind(fun (eventList,eventIndex,nextEventId) ->
-            match eventList.Length,offSet with
-            | 0,0L -> wfid |> NotFound |> Error
+            match ((Seq.isEmpty eventList),offSet) with
+            | true,0UL -> wfid |> NotFound |> Error
             | _ ->
               Ok(
                 eventList
-                |> List.map WorkflowEvent.Encoder
-                |> Encode.list
+                |> Seq.map WorkflowEvent.Encoder
+                |> Encode.seq
                 |> Encode.toString 4
                 |> Successful.OK
                 >=> pagingHeaders pageSize eventIndex nextEventId)))
 
 
-let getAllWorkflows : (HttpContext -> Task<Result<HttpHandler,APIError>>) = fun (ctx:HttpContext) ->
-    //todo: paged reading of seq needs to move to some Seq lib/module?
-    //todo: MemoryStore could (should?) be refactored to use this same function
-    //todo: this could probably be refactored to use mutables internally and get everything with one pass on the seq
-    let readPage offSet count stream =
-        let takeUpTo mx = 
-            match mx with 
-            | 0 -> id 
-            | _ -> Seq.indexed >> Seq.takeWhile(fun (i,_) -> i < mx) >> Seq.map snd
-        let iStream =
-            Seq.indexed stream
-            |> match offSet with
-                | 0L -> id
-                | _ -> Seq.skip (offSet - 1L |> int)
-        let indexedItems = iStream |> takeUpTo count
-        let items = indexedItems |> Seq.map snd |> List.ofSeq
-        let lastItemNumber = indexedItems |> Seq.last |> fst |> (+) 1
-        let nextItemNumber =
-            let nextItemCandidate = iStream |> takeUpTo (count+1) |> Seq.last |> fst |> (+) 1
-            match lastItemNumber = nextItemCandidate with
-                | true -> None
-                | false -> nextItemCandidate |> int64 |> Some
-        (items, int64 lastItemNumber, nextItemNumber)
-
-
+let getAllWorkflows _ =
     try
-        let options = getOptions ctx
-        let pageSize = 
-            let pgSize = getIntOption "pagesize" 10L 100L 50L options
-            System.Convert.ToInt32(pgSize) // don't need to catch exn because we know it is in range 10-50
-        let offSet = options |> getIntOption "offset" 0L System.Int64.MaxValue 0L
-        workFlowByNameRepo.RetrieveItems (fun _ _ -> true)
-        |> Async.StartAsTask
-        |> Task.map(fun allWorkflows ->
-            let (eventList,itemIndex,nextItemId) =
-                allWorkflows
-                |> Map.toSeq
-                |> readPage offSet pageSize
-            eventList
-            |> List.map (fun (wfid,name) -> { Api.ViewTypes.WorkflowMetaListItem.WorkflowId = wfid; Api.ViewTypes.WorkflowMetaListItem.Name = name } |> Api.ViewTypes.WorkflowMetaListItem.Encoder )
-            |> Encode.list
-            |> Encode.toString 4
-            |> Successful.OK
-            >=> pagingHeaders pageSize itemIndex nextItemId
-            |> Ok )
-    with e -> e |> Unknown |> Error |> Task.FromResult
+        (fun (_:HttpFunc) (ctx:HttpContext) ->
+            use memStream = new System.IO.MemoryStream ()
+            use itemStream = new System.IO.StreamWriter (memStream)
+            let writeItem (wfid,name) =
+                { Api.ViewTypes.WorkflowMetaListItem.WorkflowId = wfid; Api.ViewTypes.WorkflowMetaListItem.Name = name }
+                |> Api.ViewTypes.WorkflowMetaListItem.Encoder
+                |> Encode.toString 4
+                |> itemStream.Write
+            itemStream.Write "[/n"
+            use observer =
+                workFlowByNameRepo.RetrieveItems (fun _ _ -> true)
+                |> FSharp.Control.Reactive.Observable.subscribeWithCompletion writeItem (fun () -> itemStream.Write "\n]")
+            ctx.WriteStreamAsync
+                    false // enableRangeProcessing
+                    memStream
+                    None // eTag
+                    None // lastModified
+        ) |> Ok
+    with e -> e |> Unknown |> Error
+    |> Task.FromResult
 
 
 let getWorkflow wfid = fun (_:HttpContext) ->
-    Common.getState (WorkflowId wfid) 0L
+    Sentinam.Envelope.newGetState (WorkflowId wfid) 0UL
     |> wfDispatcher.PostAndAsyncReply
     |> Async.StartAsTask |> Task.map(
         Result.mapError WorkflowError
