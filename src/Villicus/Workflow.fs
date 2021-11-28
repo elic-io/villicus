@@ -586,7 +586,7 @@ module Workflow =
         |> ifTransitionExists command.TransitionId
         |> bindExists command.WorkflowId
 
-    let handle cmd workflow = 
+    let handle =
         function
         | CreateWorkflow command -> createWorkflow command
         | RenameWorkflow command -> renameWorkflow command
@@ -602,7 +602,6 @@ module Workflow =
         | AddTransition command -> addTransition command
         | EditTransition command -> editTransition command
         | DropTransition command -> dropTransition command
-        |> (fun f -> f cmd workflow |> (Result.map List.toSeq))
 
     let evolve (state:Workflow) event : Workflow =
         let createNew workflowId name =
@@ -643,53 +642,50 @@ module Workflow =
             { s with 
                 Transitions = s.Transitions |> Map.add newTran.Id newTran
                 States = s.States |> Map.add addSource.Id addSource |> Map.add addTarget.Id addTarget}
-            
-        let ev =
-          function
-          //We are ignoring possible error where WorkflowCreated event on Some state
-          //However, this is caught by not allowing create command on Some
-          | None, WorkflowCreated e -> createNew e.WorkflowId e.Name |> Some
-          | None, _ -> None
-          | Some _, WorkflowCreated _ -> None
-          | Some s, WorkflowRenamed e ->Some { s with Name = e.Name }
-          | Some s, WorkflowCreatedAsCopy e ->
-            { s with
-                WorkflowId = e.WorkflowId 
-                Ancestors = seq { yield! s.Ancestors; yield e.Source } }
-            |> Some
-          | Some s, WorkflowCopied e ->
-            { s with
-                DirectDescendents = Set.add e.Target s.DirectDescendents }
-            |> Some
-          | Some s, WorkflowPublished e -> Some { s with PublishedVersions = s.PublishedVersions |> Set.add e.Version }
-          | Some s, VersionIncremented e -> Some { s with Version = e.Version; Versions = s.Versions |> Set.add e.Version }
-          | Some s, WorkflowWithdrawn e -> Some { s with PublishedVersions = s.PublishedVersions |> Set.remove e.Version }
-          | Some s, WorkflowNamed e -> Some { s with Name = e.Name }
-          | Some s, StateAdded e -> Some { s with States = Map.add e.StateId (State.New e.StateName e.StateId false) s.States }
-          | Some s, StateRenamed e ->
-            let st = s.States |> Map.find e.StateId 
-            Some { s with States = s.States |> Map.add e.StateId { st with Name = e.StateName } }
-          | Some s, StateDropped e ->
-            { s with 
-                States = Map.remove e.StateId s.States 
-                Transitions = s.Transitions |> Map.filter (fun _ t -> t.SourceState <> e.StateId && t.TargetState <> e.StateId) }
-            |> Some
-          | Some s, TerminalStateDesignated e ->
-            let termState = { (s.States |> Map.find e.StateId) with IsTerminal = true }
-            { s with 
-                TerminalStates = s.TerminalStates |> Set.add e.StateId
-                States = s.States |> Map.add e.StateId termState } |> Some
-          | Some s, TerminalStateUnDesignated e ->
-            let nonTermState = { (s.States |> Map.find e.StateId) with IsTerminal = false }
-            { s with 
-                TerminalStates = s.TerminalStates |> Set.remove e.StateId
-                States = s.States |> Map.add e.StateId nonTermState } |> Some 
-          | Some s, TransitionAdded e -> addTransition e s |> Some
-          | Some s, TransitionChanged e -> remTransition e.TransitionId s |> addTransition e |> Some
-          | Some s, TransitionDropped e ->
-            let s' = remTransition e.TransitionId s
-            Some { s' with Transitions = s.Transitions |> Map.remove e.TransitionId }
-        ev (state,event)
+        let procEvent (s:WorkflowModel) =
+            function
+            | WorkflowCreated _ -> s
+            | WorkflowRenamed e -> { s with Name = e.Name }
+            | WorkflowCreatedAsCopy e ->
+              { s with
+                  WorkflowId = e.WorkflowId 
+                  Ancestors = seq { yield! s.Ancestors; yield e.Source } }
+            | WorkflowCopied e ->
+              { s with
+                  DirectDescendents = Set.add e.Target s.DirectDescendents }
+            | WorkflowPublished e -> { s with PublishedVersions = s.PublishedVersions |> Set.add e.Version }
+            | VersionIncremented e -> { s with Version = e.Version; Versions = s.Versions |> Set.add e.Version }
+            | WorkflowWithdrawn e -> { s with PublishedVersions = s.PublishedVersions |> Set.remove e.Version }
+            | WorkflowNamed e -> { s with Name = e.Name }
+            | StateAdded e -> { s with States = Map.add e.StateId (State.New e.StateName e.StateId false) s.States }
+            | StateRenamed e ->
+              let st = s.States |> Map.find e.StateId 
+              { s with States = s.States |> Map.add e.StateId { st with Name = e.StateName } }
+            | StateDropped e ->
+              { s with 
+                  States = Map.remove e.StateId s.States 
+                  Transitions = s.Transitions |> Map.filter (fun _ t -> t.SourceState <> e.StateId && t.TargetState <> e.StateId) }
+            | TerminalStateDesignated e ->
+              let termState = { (s.States |> Map.find e.StateId) with IsTerminal = true }
+              { s with 
+                  TerminalStates = s.TerminalStates |> Set.add e.StateId
+                  States = s.States |> Map.add e.StateId termState }
+            | TerminalStateUnDesignated e ->
+              let nonTermState = { (s.States |> Map.find e.StateId) with IsTerminal = false }
+              { s with 
+                  TerminalStates = s.TerminalStates |> Set.remove e.StateId
+                  States = s.States |> Map.add e.StateId nonTermState }
+            | TransitionAdded e -> addTransition e s
+            | TransitionChanged e -> remTransition e.TransitionId s |> addTransition e
+            | TransitionDropped e ->
+              let s' = remTransition e.TransitionId s
+              { s' with Transitions = s.Transitions |> Map.remove e.TransitionId }
+        match (state, event) with
+        //We are ignoring possible error where WorkflowCreated event on Some state
+        //However, this is caught by not allowing create command on Some
+        | None, WorkflowCreated e -> createNew e.WorkflowId e.Name |> Some
+        | None, _ -> None
+        | Some s, event -> procEvent s event |> Some
 
     type CommandProcessor<'eventId> =
         Sentinam.CommandProcessor<Workflow,WorkflowId,WorkflowCommand,WorkflowEvent,'eventId,WorkflowError> 
